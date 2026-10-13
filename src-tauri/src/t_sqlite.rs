@@ -3758,7 +3758,7 @@ impl AFile {
                             if modified {
                                 let conn = open_conn()?;
                                 let _ = conn.execute(
-                                    "UPDATE afiles SET embeds = NULL WHERE id = ?1",
+                                    "UPDATE afiles SET embeds = NULL, embed_model = NULL WHERE id = ?1",
                                     params![file_id],
                                 );
                                 updated_file.has_embedding = Some(false);
@@ -6364,6 +6364,9 @@ impl AFile {
 
     /// check ai status
     pub fn check_ai_status(state: &State<t_ai::AiState>) -> String {
+        if crate::t_omlx::is_active() {
+            return "oMLX Embedding Provider Active".into();
+        }
         match state.0.try_lock() {
             Ok(engine) if engine.is_loaded() => "AI Models Loaded".into(),
             Ok(_) => "AI Engine Initialized (Models Not Loaded)".into(),
@@ -6378,6 +6381,14 @@ impl AFile {
         params: &ImageSearchParams,
     ) -> Result<Option<Vec<f32>>, String> {
         if !params.search_text.is_empty() {
+            // The oMLX provider computes text embeddings over HTTP and must
+            // not hold the ONNX engine lock while the request is in flight.
+            if let Some(settings) = crate::t_omlx::active_settings() {
+                return Ok(Some(crate::t_omlx::embed_query_text(
+                    &settings,
+                    &params.search_text,
+                )?));
+            }
             let mut engine = state.0.lock().unwrap();
             Ok(Some(engine.encode_text(&params.search_text)?))
         } else if let Some(file_id) = params.file_id.filter(|&id| id > 0) {
@@ -6418,19 +6429,42 @@ impl AFile {
         }
 
         // 4. Generate embedding
-        let mut engine = state.0.lock().unwrap();
+        // The oMLX provider embeds image bytes over HTTP (no engine lock);
+        // the built-in provider keeps the in-process ONNX path.
+        let embedding = if let Some(settings) = crate::t_omlx::active_settings() {
+            let image_bytes = match AThumb::fetch(file_id) {
+                Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
+                    thumb.thumb_data.as_ref().unwrap().clone()
+                }
+                _ => std::fs::read(&file_path)
+                    .map_err(|e| format!("Failed to read image file: {}", e))?,
+            };
+            crate::t_omlx::embed_single_image(&settings, &image_bytes)?
+        } else {
+            let mut engine = state.0.lock().unwrap();
 
-        // Optimized: Use thumbnail if available (much faster than loading original)
-        // Fallback to original file if thumbnail is missing or fails to process
-        let embedding = match AThumb::fetch(file_id) {
-            Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
-                let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
-                match panic::catch_unwind(AssertUnwindSafe(|| {
-                    engine.encode_image_from_bytes(thumb_bytes)
-                })) {
-                    Ok(res) => res.or_else(|_| {
-                        // If thumbnail processing fails (e.g. corrupted), try original
-                        match panic::catch_unwind(AssertUnwindSafe(|| {
+            // Optimized: Use thumbnail if available (much faster than loading original)
+            // Fallback to original file if thumbnail is missing or fails to process
+            match AThumb::fetch(file_id) {
+                Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
+                    let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
+                    match panic::catch_unwind(AssertUnwindSafe(|| {
+                        engine.encode_image_from_bytes(thumb_bytes)
+                    })) {
+                        Ok(res) => res.or_else(|_| {
+                            // If thumbnail processing fails (e.g. corrupted), try original
+                            match panic::catch_unwind(AssertUnwindSafe(|| {
+                                engine.encode_image(&file_path)
+                            })) {
+                                Ok(res2) => res2,
+                                Err(_) => Err(format!(
+                                    "Embedding panic while encoding original image: {}",
+                                    file_path
+                                )),
+                            }
+                        }),
+                        // If thumbnail path panics, still try original once.
+                        Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
                             engine.encode_image(&file_path)
                         })) {
                             Ok(res2) => res2,
@@ -6438,28 +6472,20 @@ impl AFile {
                                 "Embedding panic while encoding original image: {}",
                                 file_path
                             )),
-                        }
-                    }),
-                    // If thumbnail path panics, still try original once.
-                    Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
-                        engine.encode_image(&file_path)
-                    })) {
-                        Ok(res2) => res2,
-                        Err(_) => Err(format!(
-                            "Embedding panic while encoding original image: {}",
-                            file_path
-                        )),
-                    },
+                        },
+                    }
                 }
-            }
-            _ => match panic::catch_unwind(AssertUnwindSafe(|| engine.encode_image(&file_path))) {
-                Ok(res) => res,
-                Err(_) => Err(format!(
-                    "Embedding panic while encoding original image: {}",
-                    file_path
-                )),
-            },
-        }?;
+                _ => match panic::catch_unwind(AssertUnwindSafe(|| {
+                    engine.encode_image(&file_path)
+                })) {
+                    Ok(res) => res,
+                    Err(_) => Err(format!(
+                        "Embedding panic while encoding original image: {}",
+                        file_path
+                    )),
+                },
+            }?
+        };
 
         // 5. Save to DB
         let _ =
@@ -6479,19 +6505,24 @@ impl AFile {
         let conn = open_conn()?;
         let result = conn
             .execute(
-                "UPDATE afiles SET embeds = ?1 WHERE id = ?2",
-                params![bytes, file_id],
+                "UPDATE afiles SET embeds = ?1, embed_model = ?3 WHERE id = ?2",
+                params![bytes, file_id, crate::t_omlx::active_model_id()],
             )
             .map_err(|e| e.to_string())?;
         Ok(result)
     }
 
+    /// Embedding for a file, but only when it was produced by the currently
+    /// active model. Vectors from different models live in different spaces
+    /// and must never be compared.
     pub fn get_embedding_by_id(file_id: i64) -> Result<Vec<f32>, String> {
         let conn = open_conn()?;
         let embeds_blob: Vec<u8> = conn
             .query_row(
-                "SELECT embeds FROM afiles WHERE id = ?1 AND embeds IS NOT NULL",
-                params![file_id],
+                "SELECT embeds FROM afiles
+                 WHERE id = ?1 AND embeds IS NOT NULL
+                   AND COALESCE(embed_model, ?3) = ?2",
+                params![file_id, crate::t_omlx::active_model_id(), crate::t_omlx::BUILTIN_EMBED_MODEL],
                 |row| row.get(0),
             )
             .optional()
@@ -6504,6 +6535,48 @@ impl AFile {
             .collect();
 
         Ok(embedding)
+    }
+
+    /// Count image files that still need an embedding for the given model.
+    pub fn count_embedding_reindex(model_id: &str) -> Result<i64, String> {
+        let conn = open_conn()?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM afiles a
+             WHERE a.file_type IN (1, 3)
+               AND (a.embeds IS NULL OR COALESCE(a.embed_model, ?2) <> ?1)",
+            params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    /// Next page of image files that still need an embedding for the given
+    /// model, ordered by id (keyset pagination).
+    pub fn get_embedding_reindex_batch(
+        last_id: i64,
+        limit: i64,
+        model_id: &str,
+    ) -> Result<Vec<(i64, String)>, String> {
+        let conn = open_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT a.id, b.path || '/' || a.name
+                 FROM afiles a
+                 JOIN afolders b ON a.folder_id = b.id
+                 WHERE a.id > ?1
+                   AND a.file_type IN (1, 3)
+                   AND (a.embeds IS NULL OR COALESCE(a.embed_model, ?3) <> ?2)
+                 ORDER BY a.id
+                 LIMIT ?4",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(
+                params![last_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
     /// search similar images
@@ -6522,7 +6595,8 @@ impl AFile {
         let mut query = "SELECT a.id, a.embeds
             FROM afiles a
             LEFT JOIN afolders b ON a.folder_id = b.id
-            WHERE a.embeds IS NOT NULL"
+            WHERE a.embeds IS NOT NULL
+              AND COALESCE(a.embed_model, ?1) = ?1"
             .to_string();
 
         query.push_str(" AND ");
@@ -6538,7 +6612,7 @@ impl AFile {
         let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
 
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(params![crate::t_omlx::active_model_id()], |row| {
                 let id: i64 = row.get(0)?;
                 let embeds_blob: Vec<u8> = row.get(1)?;
                 Ok((id, embeds_blob))
@@ -9739,6 +9813,7 @@ fn create_db_internal() -> Result<(), String> {
             geo_admin2 TEXT,
             geo_cc TEXT,
             embeds BLOB,
+            embed_model TEXT,
             last_scan_time INTEGER DEFAULT 0,
             content_identifier TEXT,
             media_subtype TEXT,
@@ -9810,6 +9885,9 @@ fn create_db_internal() -> Result<(), String> {
         "ALTER TABLE afiles ADD COLUMN culling_flag INTEGER NOT NULL DEFAULT 0",
         [],
     );
+    // Identifies which embedding model produced afiles.embeds; NULL means the
+    // built-in CLIP model (rows written before this column existed).
+    let _ = conn.execute("ALTER TABLE afiles ADD COLUMN embed_model TEXT", []);
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_afiles_rating ON afiles(rating)",

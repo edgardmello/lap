@@ -194,6 +194,13 @@ export const useConfigStore = defineStore('configStore', {
       imageSearch: {
         model: 0,                  // 0: default English-only model, 1: multilingual model
         thresholdIndex: 2,         // image search threshold index (default is Standard)
+        provider: 'builtin',       // 'builtin' (bundled CLIP) | 'omlx' (local oMLX server)
+        omlx: {                    // oMLX embedding server connection
+          url: 'http://127.0.0.1:8000',
+          apiKey: '',
+          model: 'mlx-community/embeddinggemma-2-bf16',
+          dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
+        },
       },
 
       // similar photos settings
@@ -218,6 +225,9 @@ export const useConfigStore = defineStore('configStore', {
     },
     // Image search threshold values: [Strict, Focused, Standard, Broad]
     imageSearchThresholds: () => [0.32, 0.29, 0.26, 0.255],
+
+    // Embedding dimensions for Matryoshka-capable models (null keeps full size)
+    imageSearchOmlxDimensions: () => [null, 512, 256, 128],
 
     // Fixed threshold for image-to-image "Find related photos" search.
     similarImageSearchThreshold: () => 0.7,
@@ -403,6 +413,14 @@ export const useConfigStore = defineStore('configStore', {
     setImageSearchThresholdIndex(imageSearchThresholdIndex) {
       this.settings.imageSearch.thresholdIndex = imageSearchThresholdIndex;
     },
+    setImageSearchProvider(provider) {
+      if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
+      this.settings.imageSearch.provider = provider === 'omlx' ? 'omlx' : 'builtin';
+    },
+    setImageSearchOmlxSettings(omlx) {
+      if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
+      this.settings.imageSearch.omlx = { ...this.settings.imageSearch.omlx, ...omlx };
+    },
     setSimilarPhotoGroupingThresholdIndex(index) {
       if (!this.settings.similarPhotos) this.settings.similarPhotos = { groupingThresholdIndex: 1 };
       this.settings.similarPhotos.groupingThresholdIndex = index;
@@ -439,6 +457,18 @@ export const useConfigStore = defineStore('configStore', {
           settings.rawPreviewSource = settings.rawPreviewSource === 'rendered' ? 'rendered' : 'embedded';
           settings.rawRenderBrightness = settings.rawRenderBrightness === 'brightened' ? 'brightened' : 'original';
           settings.rawPairDisplaySource = settings.rawPairDisplaySource === 'raw' ? 'raw' : 'jpeg';
+          // Fill in image-search provider fields added after the first release.
+          const search = settings.imageSearch;
+          if (search) {
+            search.provider = search.provider === 'omlx' ? 'omlx' : 'builtin';
+            search.omlx = {
+              url: 'http://127.0.0.1:8000',
+              apiKey: '',
+              model: 'mlx-community/embeddinggemma-2-bf16',
+              dimensionsIndex: 0,
+              ...search.omlx,
+            };
+          }
         }
         return state;
       },
