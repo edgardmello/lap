@@ -6610,12 +6610,17 @@ impl AFile {
     }
 
     /// How many image files have embeddings for the given model, and how
-    /// many image files exist in total.
-    pub fn embedding_coverage(model_id: &str) -> Result<(i64, i64), String> {
-        Self::embedding_coverage_on(&*open_conn()?, model_id)
+    /// many image files exist in total. With `expected_bytes`, vectors of
+    /// another size under the same label do not count.
+    pub fn embedding_coverage(model_id: &str, expected_bytes: Option<usize>) -> Result<(i64, i64), String> {
+        Self::embedding_coverage_on(&*open_conn()?, model_id, expected_bytes)
     }
 
-    fn embedding_coverage_on(conn: &Connection, model_id: &str) -> Result<(i64, i64), String> {
+    fn embedding_coverage_on(
+        conn: &Connection,
+        model_id: &str,
+        expected_bytes: Option<usize>,
+    ) -> Result<(i64, i64), String> {
         let total: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM afiles WHERE file_type IN (1, 3)",
@@ -6627,8 +6632,9 @@ impl AFile {
             .query_row(
                 "SELECT COUNT(*) FROM afiles
                  WHERE file_type IN (1, 3) AND embeds IS NOT NULL
-                   AND COALESCE(embed_model, ?2) = ?1",
-                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
+                   AND COALESCE(embed_model, ?2) = ?1
+                   AND (?3 IS NULL OR length(embeds) = ?3)",
+                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, expected_bytes],
                 |row| row.get(0),
             )
             .map_err(|e| e.to_string())?;
@@ -6683,13 +6689,15 @@ impl AFile {
     }
 
     /// Next page of image files that still need an embedding for the given
-    /// model, ordered by id (keyset pagination).
+    /// model, ordered by id (keyset pagination). With `expected_bytes`, files
+    /// whose vector has another size are included too.
     pub fn get_embedding_reindex_batch(
         last_id: i64,
         limit: i64,
         model_id: &str,
+        expected_bytes: Option<usize>,
     ) -> Result<Vec<(i64, String)>, String> {
-        Self::get_embedding_reindex_batch_on(&*open_conn()?, last_id, limit, model_id)
+        Self::get_embedding_reindex_batch_on(&*open_conn()?, last_id, limit, model_id, expected_bytes)
     }
 
     fn get_embedding_reindex_batch_on(
@@ -6697,6 +6705,7 @@ impl AFile {
         last_id: i64,
         limit: i64,
         model_id: &str,
+        expected_bytes: Option<usize>,
     ) -> Result<Vec<(i64, String)>, String> {
         let mut stmt = conn
             .prepare(
@@ -6705,14 +6714,15 @@ impl AFile {
                  JOIN afolders b ON a.folder_id = b.id
                  WHERE a.id > ?1
                    AND a.file_type IN (1, 3)
-                   AND (a.embeds IS NULL OR COALESCE(a.embed_model, ?3) <> ?2)
+                   AND (a.embeds IS NULL OR COALESCE(a.embed_model, ?3) <> ?2
+                        OR (?5 IS NOT NULL AND length(a.embeds) <> ?5))
                  ORDER BY a.id
                  LIMIT ?4",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
-                params![last_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit],
+                params![last_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit, expected_bytes],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .map_err(|e| e.to_string())?;
@@ -10959,14 +10969,14 @@ mod embedding_search_tests {
             vec![1.0, 0.0, 0.0]
         );
 
-        assert_eq!(AFile::embedding_coverage_on(&conn, OMLX_MODEL).unwrap(), (1, 4));
-        assert_eq!(AFile::embedding_coverage_on(&conn, BUILTIN_EMBED_MODEL).unwrap(), (2, 4));
+        assert_eq!(AFile::embedding_coverage_on(&conn, OMLX_MODEL, None).unwrap(), (1, 4));
+        assert_eq!(AFile::embedding_coverage_on(&conn, BUILTIN_EMBED_MODEL, None).unwrap(), (2, 4));
 
         assert_eq!(AFile::sample_embedding_vectors_on(&conn, OMLX_MODEL, 3, 10).unwrap().len(), 1);
         assert_eq!(AFile::sample_embedding_vectors_on(&conn, BUILTIN_EMBED_MODEL, 3, 10).unwrap().len(), 2);
 
         let pending = |model| -> Vec<i64> {
-            AFile::get_embedding_reindex_batch_on(&conn, 0, 100, model)
+            AFile::get_embedding_reindex_batch_on(&conn, 0, 100, model, None)
                 .unwrap()
                 .into_iter()
                 .map(|(id, _)| id)
@@ -11019,6 +11029,23 @@ mod embedding_search_tests {
 
         assert_eq!(streamed.len(), rows);
         assert_eq!(streamed, serial);
+    }
+
+    #[test]
+    fn vectors_of_another_size_count_as_unindexed_and_get_reindexed() {
+        // 512-dimension vectors under the full-size label (768 expected).
+        let conn = fixture();
+        insert(&conn, 1, Some(&[1.0, 0.0, 0.0]), Some(OMLX_MODEL));
+        insert(&conn, 2, Some(&[1.0, 0.0]), Some(OMLX_MODEL));
+        let expected = Some(3 * 4);
+        assert_eq!(AFile::embedding_coverage_on(&conn, OMLX_MODEL, expected).unwrap(), (1, 2));
+        assert_eq!(AFile::embedding_coverage_on(&conn, OMLX_MODEL, None).unwrap(), (2, 2));
+        let pending: Vec<i64> = AFile::get_embedding_reindex_batch_on(&conn, 0, 100, OMLX_MODEL, expected)
+            .unwrap()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(pending, vec![2]);
     }
 
     #[test]

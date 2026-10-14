@@ -3325,10 +3325,22 @@ pub fn get_embedding_reindex_status(
 
 /// how many photos have embeddings for the active model
 #[tauri::command]
-pub fn get_embedding_coverage() -> Result<serde_json::Value, String> {
-    let model = t_omlx::active_model_id();
-    let (indexed, total) = AFile::embedding_coverage(&model)?;
-    Ok(serde_json::json!({ "model": model, "indexed": indexed, "total": total }))
+pub async fn get_embedding_coverage() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let provider = t_omlx::active_settings();
+        let model = t_omlx::embed_model_id(provider.as_ref());
+        // Count only vectors of the size the model produces, so ones stored
+        // under the wrong label show up as missing; with the server down,
+        // fall back to the label alone.
+        let expected_bytes = provider
+            .as_ref()
+            .and_then(|settings| t_omlx::expected_dimensions(settings).ok())
+            .map(|dimensions| dimensions * 4);
+        let (indexed, total) = AFile::embedding_coverage(&model, expected_bytes)?;
+        Ok(serde_json::json!({ "model": model, "indexed": indexed, "total": total }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// generate embedding for a file

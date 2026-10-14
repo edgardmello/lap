@@ -337,6 +337,25 @@ impl OmlxEmbeddingSettings {
     }
 }
 
+/// Size of the vectors `settings` produces: the requested dimensions, or for
+/// full-size output the size of one probe embedding, cached per model.
+pub fn expected_dimensions(settings: &OmlxEmbeddingSettings) -> Result<usize, String> {
+    if let Some(dimensions) = settings.dimensions {
+        return Ok(dimensions as usize);
+    }
+    static CACHE: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let model_id = settings.model_id();
+    if let Some(&dimensions) = cache.lock().ok().as_ref().and_then(|c| c.get(&model_id)) {
+        return Ok(dimensions);
+    }
+    let dimensions = embed_query_text(settings, "dimension probe")?.len();
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(model_id, dimensions);
+    }
+    Ok(dimensions)
+}
+
 /// Model id for a provider snapshot (None = built-in engine). Operations take
 /// one snapshot up front and label everything they write with it, so a
 /// settings change mid-operation cannot mislabel vectors.
@@ -736,6 +755,12 @@ fn run_reindex(
     provider: Option<OmlxEmbeddingSettings>,
 ) -> Result<(), String> {
     let model_id = embed_model_id(provider.as_ref());
+    // Vectors of another size under this label (written by an older build)
+    // are re-embedded too.
+    let expected_bytes = provider
+        .as_ref()
+        .map(|settings| expected_dimensions(settings).map(|d| d * 4))
+        .transpose()?;
 
     // Collect the full work list up front so parallel workers can share it.
     let work = crate::t_cmds::with_current_library(library_id, || {
@@ -746,6 +771,7 @@ fn run_reindex(
                 last_id,
                 REINDEX_PAGE_SIZE,
                 &model_id,
+                expected_bytes,
             )?;
             let Some((id, _)) = page.last() else { break };
             last_id = *id;
@@ -1101,6 +1127,14 @@ mod tests {
         let generation = store.begin(&key, false).unwrap();
         store.abandon(&key, generation);
         assert!(store.begin(&key, false).is_some());
+    }
+
+    #[test]
+    fn requested_dimensions_need_no_probe() {
+        // An unreachable URL proves no request is made.
+        let mut fixed = settings("eg2", Some(256));
+        fixed.url = "http://127.0.0.1:1".into();
+        assert_eq!(expected_dimensions(&fixed), Ok(256));
     }
 
     #[test]
