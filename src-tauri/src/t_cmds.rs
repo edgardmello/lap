@@ -3323,6 +3323,14 @@ pub fn get_embedding_reindex_status(
     state.status()
 }
 
+/// how many photos have embeddings for the active model
+#[tauri::command]
+pub fn get_embedding_coverage() -> Result<serde_json::Value, String> {
+    let model = t_omlx::active_model_id();
+    let (indexed, total) = AFile::embedding_coverage(&model)?;
+    Ok(serde_json::json!({ "model": model, "indexed": indexed, "total": total }))
+}
+
 /// generate embedding for a file
 #[tauri::command]
 pub async fn generate_embedding(

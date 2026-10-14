@@ -9,7 +9,8 @@
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -25,8 +26,12 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(8);
 const EMBED_TIMEOUT: Duration = Duration::from_secs(120);
 /// Images embedded per request when re-indexing with the oMLX provider.
 const REINDEX_BATCH_SIZE: usize = 8;
+/// Concurrent re-index workers hitting the server in parallel.
+const REINDEX_CONCURRENCY: usize = 4;
 /// Abort the re-index after this many consecutive failed batches.
 const MAX_CONSECUTIVE_BATCH_ERRORS: usize = 3;
+/// Page size when collecting the re-index work list.
+const REINDEX_PAGE_SIZE: i64 = 512;
 
 /// Model id stamped on embeddings produced by the built-in ONNX engine.
 /// Rows written before the embed_model column existed are treated as this.
@@ -36,10 +41,125 @@ pub const BUILTIN_EMBED_MODEL: &str = "clip-vit-b32";
 /// models spread cosine scores over a high, narrow band (measured on a real
 /// library: relevant matches 0.70-0.79, related-but-wrong images 0.65-0.73,
 /// absent concepts peaking around 0.67). Searches therefore keep only
-/// results within RELATIVE_MATCH_MARGIN of the best match, and a best match
-/// below MIN_CONFIDENT_MATCH means the query has no real hits.
+/// results within `margin` of the best match, and a best match below
+/// `floor` means the query has no real hits.
+///
+/// These defaults are hand-tuned for EmbeddingGemma 2; `calibrate` refines
+/// them per model by measuring the text/image similarity band of the actual
+/// library, so other server models work without manual tuning.
+#[derive(Debug, Clone, Copy)]
+pub struct ScoreCalibration {
+    pub floor: f32,
+    pub margin: f32,
+}
+
+impl Default for ScoreCalibration {
+    fn default() -> Self {
+        Self {
+            floor: MIN_CONFIDENT_MATCH,
+            margin: RELATIVE_MATCH_MARGIN,
+        }
+    }
+}
+
 pub const MIN_CONFIDENT_MATCH: f32 = 0.69;
 pub const RELATIVE_MATCH_MARGIN: f32 = 0.04;
+
+/// Generic probe concepts used to measure the model's score band against
+/// the user's own photos.
+const CALIBRATION_PROBE_QUERIES: [&str; 6] = [
+    "a photo of a person",
+    "a landscape scene",
+    "a plate of food",
+    "an animal",
+    "a building",
+    "a plant",
+];
+/// Stored-embedding sample size for calibration.
+const CALIBRATION_SAMPLE_SIZE: i64 = 100;
+/// Minimum sample the calibration accepts.
+const CALIBRATION_MIN_VECTORS: usize = 20;
+
+fn calibration_cell() -> &'static RwLock<Option<ScoreCalibration>> {
+    static CALIBRATION: OnceLock<RwLock<Option<ScoreCalibration>>> = OnceLock::new();
+    CALIBRATION.get_or_init(|| RwLock::new(None))
+}
+
+/// Calibration used by search filtering: the measured band when available,
+/// the hand-tuned defaults otherwise.
+pub fn effective_calibration() -> ScoreCalibration {
+    calibration_cell()
+        .read()
+        .ok()
+        .and_then(|cell| *cell)
+        .unwrap_or_default()
+}
+
+/// Measure the score band in the background and store it for searches.
+pub fn calibrate_async(settings: OmlxEmbeddingSettings) {
+    std::thread::spawn(move || match calibrate(&settings) {
+        Ok(calibration) => {
+            println!(
+                "Embedding score calibration for {}: floor={:.3} margin={:.3}",
+                settings.model, calibration.floor, calibration.margin
+            );
+            if let Ok(mut cell) = calibration_cell().write() {
+                *cell = Some(calibration);
+            }
+        }
+        Err(error) => eprintln!("Embedding score calibration skipped: {}", error),
+    });
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb).sqrt()
+    }
+}
+
+/// Estimate the floor ("confident best match") and margin ("close to the
+/// best match") from random text/image similarity over the user's library:
+/// floor = mean + 2.75·σ, margin = 1.5·σ, clamped around the hand-tuned
+/// defaults so a degenerate sample cannot derail search.
+fn calibrate(settings: &OmlxEmbeddingSettings) -> Result<ScoreCalibration, String> {
+    let model_id = omlx_model_id(&settings.model, settings.dimensions);
+    let vectors =
+        crate::t_sqlite::AFile::sample_embedding_vectors(&model_id, CALIBRATION_SAMPLE_SIZE)?;
+    if vectors.len() < CALIBRATION_MIN_VECTORS {
+        return Err(format!(
+            "only {} photos indexed for this model yet",
+            vectors.len()
+        ));
+    }
+
+    let mut probes = Vec::with_capacity(CALIBRATION_PROBE_QUERIES.len());
+    for query in CALIBRATION_PROBE_QUERIES {
+        probes.push(embed_query_text(settings, query)?);
+    }
+
+    let mut samples = Vec::with_capacity(probes.len() * vectors.len());
+    for probe in &probes {
+        for vector in &vectors {
+            samples.push(cosine_similarity(probe, vector));
+        }
+    }
+    let count = samples.len() as f32;
+    let mean = samples.iter().sum::<f32>() / count;
+    let variance = samples.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>() / count;
+    let sigma = variance.sqrt();
+
+    let floor = (mean + 2.75 * sigma).clamp(MIN_CONFIDENT_MATCH - 0.06, MIN_CONFIDENT_MATCH + 0.06);
+    let margin = (1.5 * sigma).clamp(RELATIVE_MATCH_MARGIN - 0.02, RELATIVE_MATCH_MARGIN + 0.03);
+    Ok(ScoreCalibration { floor, margin })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +230,10 @@ pub fn apply_settings(settings: Option<OmlxEmbeddingSettings>) -> Result<(), Str
         Some(settings) => Some(settings.normalized()?),
         None => None,
     };
+    if let Some(active) = &settings {
+        // Refresh the score band whenever the model or dimensions change.
+        calibrate_async(active.clone());
+    }
     *active_settings_cell()
         .write()
         .map_err(|e| format!("Embedding provider lock poisoned: {}", e))? = settings;
@@ -464,107 +588,206 @@ fn run_reindex(
 ) -> Result<(), String> {
     let model_id = active_model_id();
     let omlx_settings = active_settings();
-    let total = crate::t_sqlite::AFile::count_embedding_reindex(&model_id)?;
+
+    // Collect the full work list up front so parallel workers can share it.
+    let mut work: Vec<(i64, String)> = Vec::new();
+    let mut last_id: i64 = 0;
+    loop {
+        let page = crate::t_sqlite::AFile::get_embedding_reindex_batch(
+            last_id,
+            REINDEX_PAGE_SIZE,
+            &model_id,
+        )?;
+        if page.is_empty() {
+            break;
+        }
+        last_id = page.last().map(|(id, _)| *id).unwrap_or(last_id);
+        work.extend(page);
+    }
     if let Ok(mut status) = status.lock() {
-        status.total = total;
+        status.total = work.len() as i64;
     }
 
-    let batch_size = if omlx_settings.is_some() {
-        REINDEX_BATCH_SIZE
-    } else {
-        1
-    };
-    let mut last_id: i64 = 0;
-    let mut done: i64 = 0;
-    let mut failed: i64 = 0;
-    let mut consecutive_errors: usize = 0;
+    match omlx_settings {
+        Some(settings) => run_reindex_omlx(app, cancel, library_id, status, settings, work),
+        None => run_reindex_builtin(app, cancel, library_id, status, work),
+    }
+}
 
-    loop {
+/// oMLX re-index: several workers pull batches from a shared queue and embed
+/// them concurrently; the server batches each request internally.
+fn run_reindex_omlx(
+    app: &tauri::AppHandle,
+    cancel: &Arc<AtomicBool>,
+    library_id: &str,
+    status: &Arc<Mutex<EmbeddingReindexStatus>>,
+    settings: OmlxEmbeddingSettings,
+    work: Vec<(i64, String)>,
+) -> Result<(), String> {
+    let queue: Arc<Mutex<VecDeque<(i64, String)>>> = Arc::new(Mutex::new(VecDeque::from(work)));
+    let done = Arc::new(AtomicI64::new(0));
+    let failed = Arc::new(AtomicI64::new(0));
+    let consecutive_errors = Arc::new(AtomicUsize::new(0));
+    let abort_reason: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    std::thread::scope(|scope| {
+        for _ in 0..REINDEX_CONCURRENCY {
+            let queue = queue.clone();
+            let done = done.clone();
+            let failed = failed.clone();
+            let consecutive_errors = consecutive_errors.clone();
+            let abort_reason = abort_reason.clone();
+            let cancel = cancel.clone();
+            let status = status.clone();
+            let settings = settings.clone();
+            let app = app.clone();
+            let library_id = library_id.to_string();
+            scope.spawn(move || loop {
+                if cancel.load(Ordering::SeqCst)
+                    || consecutive_errors.load(Ordering::SeqCst) >= MAX_CONSECUTIVE_BATCH_ERRORS
+                {
+                    break;
+                }
+                if let Ok(reason) = abort_reason.lock() {
+                    if reason.is_some() {
+                        break;
+                    }
+                }
+                if crate::t_config::current_library_id().ok().as_deref() != Some(library_id.as_str())
+                {
+                    if let Ok(mut reason) = abort_reason.lock() {
+                        *reason = Some("Library changed".into());
+                    }
+                    break;
+                }
+
+                let mut chunk: Vec<(i64, String)> = Vec::with_capacity(REINDEX_BATCH_SIZE);
+                if let Ok(mut queue) = queue.lock() {
+                    for _ in 0..REINDEX_BATCH_SIZE {
+                        match queue.pop_front() {
+                            Some(item) => chunk.push(item),
+                            None => break,
+                        }
+                    }
+                }
+                if chunk.is_empty() {
+                    break;
+                }
+
+                // Resolve input bytes first (thumbnail preferred), then embed
+                // the whole batch in a single request.
+                let mut inputs: Vec<(i64, Vec<u8>)> = Vec::with_capacity(chunk.len());
+                for (file_id, file_path) in &chunk {
+                    match image_input_bytes(*file_id, file_path) {
+                        Ok(bytes) => inputs.push((*file_id, bytes)),
+                        Err(error) => {
+                            failed.fetch_add(1, Ordering::SeqCst);
+                            eprintln!("Embedding re-index skipped file {}: {}", file_id, error);
+                        }
+                    }
+                }
+
+                if !inputs.is_empty() {
+                    let items: Vec<serde_json::Value> =
+                        inputs.iter().map(|(_, bytes)| image_item(bytes)).collect();
+                    match request_embeddings(&settings, &items) {
+                        Ok(vectors) => {
+                            consecutive_errors.store(0, Ordering::SeqCst);
+                            let mut stored = 0i64;
+                            for ((file_id, _), vector) in inputs.iter().zip(vectors.iter()) {
+                                match crate::t_sqlite::AFile::update_embedding(
+                                    *file_id,
+                                    vector.clone(),
+                                ) {
+                                    Ok(_) => stored += 1,
+                                    Err(error) => {
+                                        failed.fetch_add(1, Ordering::SeqCst);
+                                        eprintln!(
+                                            "Embedding re-index failed to store {}: {}",
+                                            file_id, error
+                                        );
+                                    }
+                                }
+                            }
+                            done.fetch_add(stored, Ordering::SeqCst);
+                        }
+                        Err(error) => {
+                            failed.fetch_add(inputs.len() as i64, Ordering::SeqCst);
+                            let errors =
+                                consecutive_errors.fetch_add(1, Ordering::SeqCst) + 1;
+                            eprintln!("Embedding re-index batch failed: {}", error);
+                            if errors >= MAX_CONSECUTIVE_BATCH_ERRORS
+                                && let Ok(mut reason) = abort_reason.lock()
+                            {
+                                *reason = Some(error);
+                            }
+                        }
+                    }
+                }
+
+                if let Ok(mut current) = status.lock() {
+                    current.done = done.load(Ordering::SeqCst);
+                    current.failed = failed.load(Ordering::SeqCst);
+                    let _ = app.emit("embedding_reindex_progress", current.clone());
+                }
+            });
+        }
+    });
+
+    if let Ok(reason) = abort_reason.lock() {
+        if let Some(error) = reason.clone() {
+            return Err(error);
+        }
+    }
+    // The score band now reflects the freshly indexed model.
+    calibrate_async(settings);
+    Ok(())
+}
+
+/// Built-in re-index: the ONNX engine is mutex-serialized, so run files one
+/// at a time through the regular embedding pipeline.
+fn run_reindex_builtin(
+    app: &tauri::AppHandle,
+    cancel: &Arc<AtomicBool>,
+    library_id: &str,
+    status: &Arc<Mutex<EmbeddingReindexStatus>>,
+    work: Vec<(i64, String)>,
+) -> Result<(), String> {
+    if work.is_empty() {
+        return Ok(());
+    }
+    crate::t_startup::ensure_ai(app, None)?;
+    let ai_state: tauri::State<'_, crate::t_ai::AiState> = app.state();
+    let (mut done, mut failed) = (0i64, 0i64);
+
+    for (file_id, _) in work {
         if cancel.load(Ordering::SeqCst) {
             return Ok(());
         }
         if crate::t_config::current_library_id().ok().as_deref() != Some(library_id) {
             return Err("Library changed".into());
         }
-
-        let batch = crate::t_sqlite::AFile::get_embedding_reindex_batch(
-            last_id,
-            batch_size as i64,
-            &model_id,
-        )?;
-        if batch.is_empty() {
-            break;
-        }
-        last_id = batch.last().map(|(id, _)| *id).unwrap_or(last_id);
-
-        if let Some(settings) = &omlx_settings {
-            // Resolve input bytes first (thumbnail preferred), then embed the
-            // whole batch in a single request.
-            let mut inputs: Vec<(i64, Vec<u8>)> = Vec::with_capacity(batch.len());
-            for (file_id, file_path) in &batch {
-                match image_input_bytes(*file_id, file_path) {
-                    Ok(bytes) => inputs.push((*file_id, bytes)),
-                    Err(error) => {
-                        failed += 1;
-                        eprintln!("Embedding re-index skipped file {}: {}", file_id, error);
-                    }
-                }
-            }
-
-            if !inputs.is_empty() {
-                let items: Vec<serde_json::Value> =
-                    inputs.iter().map(|(_, bytes)| image_item(bytes)).collect();
-                match request_embeddings(settings, &items) {
-                    Ok(vectors) => {
-                        consecutive_errors = 0;
-                        for ((file_id, _), vector) in inputs.iter().zip(vectors.iter()) {
-                            match crate::t_sqlite::AFile::update_embedding(*file_id, vector.clone())
-                            {
-                                Ok(_) => done += 1,
-                                Err(error) => {
-                                    failed += 1;
-                                    eprintln!("Embedding re-index failed to store {}: {}", file_id, error);
-                                }
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        consecutive_errors += 1;
-                        failed += inputs.len() as i64;
-                        eprintln!("Embedding re-index batch failed: {}", error);
-                        if consecutive_errors >= MAX_CONSECUTIVE_BATCH_ERRORS {
-                            return Err(error);
-                        }
-                    }
-                }
-            }
-        } else {
-            // Built-in provider: encode through the ONNX engine one file at a
-            // time; AFile::generate_embedding handles thumbnails and storage.
-            if let Err(error) = crate::t_startup::ensure_ai(app, None) {
-                return Err(format!("Failed to initialize AI for re-index: {}", error));
-            }
-            let ai_state: tauri::State<'_, crate::t_ai::AiState> = app.state();
-            for (file_id, _) in &batch {
-                match crate::t_sqlite::AFile::generate_embedding(&ai_state, *file_id) {
-                    Ok(_) => done += 1,
-                    Err(error) => {
-                        failed += 1;
-                        eprintln!("Embedding re-index failed for {}: {}", file_id, error);
-                    }
-                }
+        match crate::t_sqlite::AFile::generate_embedding(&ai_state, file_id) {
+            Ok(_) => done += 1,
+            Err(error) => {
+                failed += 1;
+                eprintln!("Embedding re-index failed for {}: {}", file_id, error);
             }
         }
-
-        if let Ok(mut status) = status.lock() {
-            status.done = done;
-            status.failed = failed;
-        }
-        if let Ok(status) = status.lock() {
-            let _ = app.emit("embedding_reindex_progress", status.clone());
+        if done % 16 == 0
+            && let Ok(mut current) = status.lock()
+        {
+            current.done = done;
+            current.failed = failed;
+            let _ = app.emit("embedding_reindex_progress", current.clone());
         }
     }
 
+    if let Ok(mut current) = status.lock() {
+        current.done = done;
+        current.failed = failed;
+        let _ = app.emit("embedding_reindex_progress", current.clone());
+    }
     Ok(())
 }
 

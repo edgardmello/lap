@@ -39,6 +39,9 @@ static THUMB_GENERATION_LOCKS: OnceLock<ThumbGenerationLocks> = OnceLock::new();
 static THUMB_BACKGROUND_TASKS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static THUMB_BACKGROUND_GENERATION_PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 const MAX_BACKGROUND_THUMB_GENERATIONS: usize = 4;
+/// Below this many candidates, embedding search stays on the calling thread;
+/// larger scans are split across worker threads.
+const PARALLEL_SCORE_MIN_ROWS: usize = 4096;
 
 fn subtree_like_pattern(path: &str) -> String {
     let separator = std::path::MAIN_SEPARATOR;
@@ -6537,17 +6540,62 @@ impl AFile {
         Ok(embedding)
     }
 
-    /// Count image files that still need an embedding for the given model.
-    pub fn count_embedding_reindex(model_id: &str) -> Result<i64, String> {
+    /// How many image files have embeddings for the given model, and how
+    /// many image files exist in total.
+    pub fn embedding_coverage(model_id: &str) -> Result<(i64, i64), String> {
         let conn = open_conn()?;
-        conn.query_row(
-            "SELECT COUNT(*) FROM afiles a
-             WHERE a.file_type IN (1, 3)
-               AND (a.embeds IS NULL OR COALESCE(a.embed_model, ?2) <> ?1)",
-            params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM afiles WHERE file_type IN (1, 3)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let indexed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM afiles
+                 WHERE file_type IN (1, 3) AND embeds IS NOT NULL
+                   AND COALESCE(embed_model, ?2) = ?1",
+                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok((indexed, total))
+    }
+
+    /// A random sample of stored embeddings for a model, used to calibrate
+    /// search score bands for the active provider.
+    pub fn sample_embedding_vectors(model_id: &str, limit: i64) -> Result<Vec<Vec<f32>>, String> {
+        let conn = open_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT embeds FROM afiles
+                 WHERE embeds IS NOT NULL AND COALESCE(embed_model, ?2) = ?1
+                 ORDER BY RANDOM() LIMIT ?3",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(
+                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|blob| {
+                blob.chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect::<Vec<f32>>()
+            })
+            .map(|vector| {
+                if vector.is_empty() {
+                    Err("Empty embedding blob".to_string())
+                } else {
+                    Ok(vector)
+                }
+            })
+            .collect()
     }
 
     /// Next page of image files that still need an embedding for the given
@@ -6611,15 +6659,15 @@ impl AFile {
 
         let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
 
-        let rows = stmt
+        let rows: Vec<(i64, Vec<u8>)> = stmt
             .query_map(params![crate::t_omlx::active_model_id()], |row| {
                 let id: i64 = row.get(0)?;
                 let embeds_blob: Vec<u8> = row.get(1)?;
                 Ok((id, embeds_blob))
             })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
-
-        let mut scores: Vec<(i64, f32)> = Vec::new();
 
         let threshold = params.threshold.clamp(0.0, 1.0);
         let query_norm = embedding
@@ -6629,11 +6677,7 @@ impl AFile {
             .sqrt();
 
         // Calculate similarity
-        for row in rows {
-            let (id, embeds_blob) = row.map_err(|e| e.to_string())?;
-            let score = Self::cosine_similarity_blob(&embedding, query_norm, &embeds_blob);
-            scores.push((id, score));
-        }
+        let scores = Self::score_embeddings(&embedding, query_norm, &rows);
 
         // The relative match window applies to text queries only: an
         // image-to-image search anchors the window at 1.0 (the source file
@@ -6669,20 +6713,64 @@ impl AFile {
     /// never gates out concepts that are absent from the library. Instead,
     /// keep only results close to the best match, and treat a weak best
     /// match as "no results".
+    /// Cosine score of the query against every stored embedding. Large
+    /// scans are split across worker threads; results keep the row order,
+    /// and dimension-mismatched rows score 0 exactly like the previous
+    /// single-threaded loop.
+    fn score_embeddings(query: &[f32], query_norm: f32, rows: &[(i64, Vec<u8>)]) -> Vec<(i64, f32)> {
+        if rows.len() < PARALLEL_SCORE_MIN_ROWS {
+            return rows
+                .iter()
+                .map(|(id, blob)| (*id, Self::cosine_similarity_blob(query, query_norm, blob)))
+                .collect();
+        }
+
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .clamp(1, 8);
+        let chunk_size = rows.len().div_ceil(threads).max(1);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = rows
+                .chunks(chunk_size)
+                .map(|chunk| {
+                    scope.spawn(move || {
+                        chunk
+                            .iter()
+                            .map(|(id, blob)| {
+                                (*id, Self::cosine_similarity_blob(query, query_norm, blob))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            let mut scores: Vec<(i64, f32)> = Vec::with_capacity(rows.len());
+            // Scoring is plain arithmetic and cannot panic; skip a worker
+            // only if it somehow does.
+            for handle in handles {
+                if let Ok(mut part) = handle.join() {
+                    scores.append(&mut part);
+                }
+            }
+            scores
+        })
+    }
+
     fn filter_search_scores(
         mut scores: Vec<(i64, f32)>,
         threshold: f32,
         relative_window: bool,
     ) -> Vec<(i64, f32)> {
         if relative_window && crate::t_omlx::is_active() && !scores.is_empty() {
+            let calibration = crate::t_omlx::effective_calibration();
             let best = scores
                 .iter()
                 .map(|(_, score)| *score)
                 .fold(f32::MIN, f32::max);
-            if best < crate::t_omlx::MIN_CONFIDENT_MATCH {
+            if best < calibration.floor {
                 return Vec::new();
             }
-            let effective = threshold.max(best - crate::t_omlx::RELATIVE_MATCH_MARGIN);
+            let effective = threshold.max(best - calibration.margin);
             scores.retain(|(_, score)| *score >= effective);
         } else {
             scores.retain(|(_, score)| *score > threshold);

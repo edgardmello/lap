@@ -1516,7 +1516,9 @@
       "reindex_finished": "Concluído",
       "reindex_cancelled": "Cancelado",
       "reindex_failed": "Falhou",
-      "reindex_failed_count": "ignoradas"
+      "reindex_failed_count": "ignoradas",
+      "omlx_coverage": "Embeddings indexados",
+      "reindex_recommended": "Configurações alteradas — reindexe para aplicá-las"
     },
     "similar_photos": {
       "title": "Fotos semelhantes",

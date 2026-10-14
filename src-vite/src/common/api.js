@@ -1923,6 +1923,15 @@ export function listenEmbeddingReindexProgress(callback) {
   return listen('embedding_reindex_progress', callback);
 }
 
+export async function getEmbeddingCoverage() {
+  try {
+    return await invoke('get_embedding_coverage');
+  } catch (error) {
+    console.error('getEmbeddingCoverage error:', error);
+  }
+  return null;
+}
+
 // generate embedding
 export async function generateEmbedding(fileId) {
   try {
