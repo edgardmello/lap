@@ -674,11 +674,12 @@ fn run_reindex_omlx(
                     break;
                 }
 
-                // Resolve input bytes first (thumbnail preferred), then embed
-                // the whole batch in a single request.
+                // Resolve input bytes first (thumbnail preferred, regenerating
+                // the cached thumbnail when the cache file is gone), then
+                // embed the whole batch in a single request.
                 let mut inputs: Vec<(i64, Vec<u8>)> = Vec::with_capacity(chunk.len());
                 for (file_id, file_path) in &chunk {
-                    match image_input_bytes(*file_id, file_path) {
+                    match image_input_bytes(*file_id, file_path, &library_id) {
                         Ok(bytes) => inputs.push((*file_id, bytes)),
                         Err(error) => {
                             failed.fetch_add(1, Ordering::SeqCst);
@@ -791,14 +792,36 @@ fn run_reindex_builtin(
     Ok(())
 }
 
-/// Thumbnail bytes when available (much smaller), otherwise the original file.
-fn image_input_bytes(file_id: i64, file_path: &str) -> Result<Vec<u8>, String> {
-    if let Ok(Some(thumb)) = crate::t_sqlite::AThumb::fetch(file_id) {
-        if let Some(thumb_data) = thumb.thumb_data {
-            if !thumb_data.is_empty() {
-                return Ok(thumb_data);
-            }
+/// Thumbnail bytes when available (much smaller than the original, and in a
+/// format the server can always decode). Regenerates the cached thumbnail
+/// when the cache file is missing — common after cache cleanup or for HEIC /
+/// RAW libraries — and falls back to the original only for formats the
+/// embedding server can decode directly.
+fn image_input_bytes(file_id: i64, file_path: &str, library_id: &str) -> Result<Vec<u8>, String> {
+    if let Ok(Some(bytes)) =
+        crate::t_sqlite::AThumb::fetch_raw_for_library(file_id, library_id)
+    {
+        if !bytes.is_empty() {
+            return Ok(bytes);
         }
     }
-    std::fs::read(file_path).map_err(|e| format!("Failed to read image file: {}", e))
+    let bytes =
+        std::fs::read(file_path).map_err(|e| format!("Failed to read image file: {}", e))?;
+    if !is_server_decodable_image(&bytes) {
+        return Err(format!(
+            "no thumbnail available and original format is not decodable by the server: {}",
+            file_path
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Formats the oMLX image pipeline can decode from inline data (JPEG, PNG,
+/// WebP, GIF). HEIC, TIFF, PSD, and camera RAW must go through thumbnails.
+pub fn is_server_decodable_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xFF, 0xD8, 0xFF]) // JPEG
+        || bytes.starts_with(&[0x89, b'P', b'N', b'G']) // PNG
+        || (bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP")
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
 }

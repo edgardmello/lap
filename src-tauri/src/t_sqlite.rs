@@ -6435,12 +6435,22 @@ impl AFile {
         // The oMLX provider embeds image bytes over HTTP (no engine lock);
         // the built-in provider keeps the in-process ONNX path.
         let embedding = if let Some(settings) = crate::t_omlx::active_settings() {
-            let image_bytes = match AThumb::fetch(file_id) {
-                Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
-                    thumb.thumb_data.as_ref().unwrap().clone()
+            // Thumbnails are always in a server-decodable format; regenerate
+            // the cached thumbnail when the cache file is missing.
+            let library_id = AThumb::get_current_library_id();
+            let image_bytes = match AThumb::fetch_raw_for_library(file_id, &library_id) {
+                Ok(Some(bytes)) if !bytes.is_empty() => bytes,
+                _ => {
+                    let bytes = std::fs::read(&file_path)
+                        .map_err(|e| format!("Failed to read image file: {}", e))?;
+                    if !crate::t_omlx::is_server_decodable_image(&bytes) {
+                        return Err(format!(
+                            "no thumbnail available and original format is not decodable by the server: {}",
+                            file_path
+                        ));
+                    }
+                    bytes
                 }
-                _ => std::fs::read(&file_path)
-                    .map_err(|e| format!("Failed to read image file: {}", e))?,
             };
             crate::t_omlx::embed_single_image(&settings, &image_bytes)?
         } else {
