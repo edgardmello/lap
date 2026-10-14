@@ -158,6 +158,12 @@ fn get_migrations() -> Vec<Migration> {
             description: "Album scan scope and pixel filters",
             sql: "",
         },
+        // v0.3.x — track the embedding model behind afiles.embeds
+        Migration {
+            version: 19,
+            description: "Add afiles.embed_model column",
+            sql: "",
+        },
     ]
 }
 
@@ -255,6 +261,11 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
             if migration.version == 2 {
                 if !table_has_column(conn, "afiles", "format_label")? {
                     conn.execute("ALTER TABLE afiles ADD COLUMN format_label TEXT", [])
+                        .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
+                }
+            } else if migration.version == 19 {
+                if !table_has_column(conn, "afiles", "embed_model")? {
+                    conn.execute("ALTER TABLE afiles ADD COLUMN embed_model TEXT", [])
                         .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
                 }
             } else if migration.version == 3 {
