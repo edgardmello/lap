@@ -32,6 +32,15 @@ const MAX_CONSECUTIVE_BATCH_ERRORS: usize = 3;
 /// Rows written before the embed_model column existed are treated as this.
 pub const BUILTIN_EMBED_MODEL: &str = "clip-vit-b32";
 
+/// Search-score calibration for the oMLX provider. EmbeddingGemma-style
+/// models spread cosine scores over a high, narrow band (measured on a real
+/// library: relevant matches 0.70-0.79, related-but-wrong images 0.65-0.73,
+/// absent concepts peaking around 0.67). Searches therefore keep only
+/// results within RELATIVE_MATCH_MARGIN of the best match, and a best match
+/// below MIN_CONFIDENT_MATCH means the query has no real hits.
+pub const MIN_CONFIDENT_MATCH: f32 = 0.69;
+pub const RELATIVE_MATCH_MARGIN: f32 = 0.04;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OmlxEmbeddingSettings {

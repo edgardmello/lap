@@ -6632,11 +6632,10 @@ impl AFile {
         for row in rows {
             let (id, embeds_blob) = row.map_err(|e| e.to_string())?;
             let score = Self::cosine_similarity_blob(&embedding, query_norm, &embeds_blob);
-
-            if score > threshold {
-                scores.push((id, score));
-            }
+            scores.push((id, score));
         }
+
+        let mut scores = Self::filter_search_scores(scores, threshold);
 
         // Sort by score descending
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6656,6 +6655,31 @@ impl AFile {
         println!("Returning {} files", results.len());
 
         Ok(results)
+    }
+
+    /// Apply the provider-appropriate score filter to search results.
+    ///
+    /// The built-in CLIP model uses the plain absolute threshold. Server
+    /// embedding models (oMLX provider) concentrate cosine scores in a high,
+    /// narrow band, so a fixed threshold both admits unrelated images and
+    /// never gates out concepts that are absent from the library. Instead,
+    /// keep only results close to the best match, and treat a weak best
+    /// match as "no results".
+    fn filter_search_scores(mut scores: Vec<(i64, f32)>, threshold: f32) -> Vec<(i64, f32)> {
+        if crate::t_omlx::is_active() && !scores.is_empty() {
+            let best = scores
+                .iter()
+                .map(|(_, score)| *score)
+                .fold(f32::MIN, f32::max);
+            if best < crate::t_omlx::MIN_CONFIDENT_MATCH {
+                return Vec::new();
+            }
+            let effective = threshold.max(best - crate::t_omlx::RELATIVE_MATCH_MARGIN);
+            scores.retain(|(_, score)| *score >= effective);
+        } else {
+            scores.retain(|(_, score)| *score > threshold);
+        }
+        scores
     }
 
     fn cosine_similarity_blob(query: &[f32], query_norm: f32, blob: &[u8]) -> f32 {
