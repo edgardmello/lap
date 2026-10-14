@@ -127,8 +127,10 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 /// Estimate the floor ("confident best match") and margin ("close to the
 /// best match") from random text/image similarity over the user's library:
-/// floor = mean + 2.75·σ, margin = 1.5·σ, clamped around the hand-tuned
-/// defaults so a degenerate sample cannot derail search.
+/// floor = mean + 2.75·σ, margin = 1.5·σ. The band depends heavily on the
+/// library's content (measured means range from ~0.53 on a documents-heavy
+/// library to ~0.60 on a colorful photo set), so the clamps are wide safety
+/// rails rather than a window around the hand-tuned defaults.
 fn calibrate(settings: &OmlxEmbeddingSettings) -> Result<ScoreCalibration, String> {
     let model_id = omlx_model_id(&settings.model, settings.dimensions);
     let vectors =
@@ -156,8 +158,8 @@ fn calibrate(settings: &OmlxEmbeddingSettings) -> Result<ScoreCalibration, Strin
     let variance = samples.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>() / count;
     let sigma = variance.sqrt();
 
-    let floor = (mean + 2.75 * sigma).clamp(MIN_CONFIDENT_MATCH - 0.06, MIN_CONFIDENT_MATCH + 0.06);
-    let margin = (1.5 * sigma).clamp(RELATIVE_MATCH_MARGIN - 0.02, RELATIVE_MATCH_MARGIN + 0.03);
+    let floor = (mean + 2.75 * sigma).clamp(0.55, 0.80);
+    let margin = (1.5 * sigma).clamp(0.02, 0.10);
     Ok(ScoreCalibration { floor, margin })
 }
 

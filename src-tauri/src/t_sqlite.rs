@@ -6689,11 +6689,16 @@ impl AFile {
         // Calculate similarity
         let scores = Self::score_embeddings(&embedding, query_norm, &rows);
 
-        // The relative match window applies to text queries only: an
-        // image-to-image search anchors the window at 1.0 (the source file
-        // matches itself), which would leave only near-duplicates.
-        let mut scores =
-            Self::filter_search_scores(scores, threshold, !params.search_text.is_empty());
+        // The oMLX provider filters relative to the best match (calibrated
+        // per library); the built-in CLIP path keeps its absolute threshold.
+        // Image-to-image searches anchor on the best match excluding the
+        // source file, which would otherwise always score 1.0.
+        let query_file_id = if params.search_text.is_empty() {
+            params.file_id.filter(|&id| id > 0)
+        } else {
+            None
+        };
+        let mut scores = Self::filter_search_scores(scores, threshold, query_file_id);
 
         // Sort by score descending
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6715,14 +6720,6 @@ impl AFile {
         Ok(results)
     }
 
-    /// Apply the provider-appropriate score filter to search results.
-    ///
-    /// The built-in CLIP model uses the plain absolute threshold. Server
-    /// embedding models (oMLX provider) concentrate cosine scores in a high,
-    /// narrow band, so a fixed threshold both admits unrelated images and
-    /// never gates out concepts that are absent from the library. Instead,
-    /// keep only results close to the best match, and treat a weak best
-    /// match as "no results".
     /// Cosine score of the query against every stored embedding. Large
     /// scans are split across worker threads; results keep the row order,
     /// and dimension-mismatched rows score 0 exactly like the previous
@@ -6766,26 +6763,66 @@ impl AFile {
         })
     }
 
+    /// Apply the provider-appropriate score filter to search results.
+    ///
+    /// The built-in CLIP model uses the plain absolute threshold. Server
+    /// embedding models (oMLX provider) concentrate cosine scores in a high,
+    /// narrow band whose position depends on the library's content, so a
+    /// fixed absolute threshold both admits unrelated images and cuts real
+    /// matches. Instead, keep results close to the best match, and treat a
+    /// best match below the calibrated floor as "no results". The frontend
+    /// threshold selects strictness (a multiplier on the calibrated margin)
+    /// rather than an absolute cutoff.
+    ///
+    /// `query_file_id` is set for image-to-image searches; the anchor skips
+    /// that row so the source file's self-match (1.0) cannot dominate.
     fn filter_search_scores(
         mut scores: Vec<(i64, f32)>,
         threshold: f32,
-        relative_window: bool,
+        query_file_id: Option<i64>,
     ) -> Vec<(i64, f32)> {
-        if relative_window && crate::t_omlx::is_active() && !scores.is_empty() {
-            let calibration = crate::t_omlx::effective_calibration();
-            let best = scores
-                .iter()
-                .map(|(_, score)| *score)
-                .fold(f32::MIN, f32::max);
-            if best < calibration.floor {
-                return Vec::new();
-            }
-            let effective = threshold.max(best - calibration.margin);
-            scores.retain(|(_, score)| *score >= effective);
-        } else {
+        if !crate::t_omlx::is_active() || scores.is_empty() {
             scores.retain(|(_, score)| *score > threshold);
+            return scores;
         }
+
+        let calibration = crate::t_omlx::effective_calibration();
+        let best = scores
+            .iter()
+            .filter(|(id, _)| Some(*id) != query_file_id)
+            .map(|(_, score)| *score)
+            .fold(f32::MIN, f32::max);
+        if best == f32::MIN {
+            // Only the query file itself is indexed; keep the previous
+            // behavior of returning it.
+            return scores;
+        }
+        if best < calibration.floor {
+            return Vec::new();
+        }
+        let margin = match query_file_id {
+            // Text search: the threshold selects strictness (0.5x .. 1.5x of
+            // the calibrated margin), coupled to the frontend's threshold
+            // values [0.69, 0.67, 0.65, 0.62] for oMLX.
+            None => calibration.margin * Self::strictness_multiplier(threshold),
+            // Image-to-image search: plain calibrated margin.
+            Some(_) => calibration.margin,
+        };
+        let effective = (best - margin).max(calibration.floor);
+        scores.retain(|(_, score)| *score >= effective);
         scores
+    }
+
+    fn strictness_multiplier(threshold: f32) -> f32 {
+        if threshold >= 0.68 {
+            0.5
+        } else if threshold >= 0.66 {
+            0.75
+        } else if threshold >= 0.64 {
+            1.0
+        } else {
+            1.5
+        }
     }
 
     fn cosine_similarity_blob(query: &[f32], query_norm: f32, blob: &[u8]) -> f32 {
