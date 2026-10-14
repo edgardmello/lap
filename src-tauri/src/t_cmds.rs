@@ -39,7 +39,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // Keep their library stable until all reads and writes have completed.
 static FILE_REFRESH_LIBRARY_LOCK: RwLock<()> = RwLock::new(());
 
-fn with_library_context<T>(
+pub(crate) fn with_library_context<T>(
     lock: &RwLock<()>,
     library_id: &str,
     current_library: impl FnOnce() -> Result<String, String>,

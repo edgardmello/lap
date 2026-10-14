@@ -15,6 +15,7 @@ use crate::t_storage;
 use crate::t_utils;
 use crate::t_video;
 use crate::t_raw_display::RawDisplayOptions;
+use crate::t_omlx::{OmlxEmbeddingSettings, ScoreCalibration};
 use base64::{Engine, engine::general_purpose};
 use chrono::{Datelike, TimeZone};
 use exif::{In, Tag, Value};
@@ -42,6 +43,8 @@ const MAX_BACKGROUND_THUMB_GENERATIONS: usize = 4;
 /// Below this many candidates, embedding search stays on the calling thread;
 /// larger scans are split across worker threads.
 const PARALLEL_SCORE_MIN_ROWS: usize = 4096;
+/// Rows held in memory at once while scoring an embedding search.
+const SCORE_CHUNK_ROWS: usize = 2 * PARALLEL_SCORE_MIN_ROWS;
 /// Minimum mean pairwise cosine of the top results to treat a just-short
 /// query as a present-but-abstract concept (measured on a mixed library:
 /// same-subject clusters 0.77-0.90, borderline same-subject 0.69, so 0.75
@@ -6386,28 +6389,31 @@ impl AFile {
         }
     }
 
-    /// get query embedding from search text or similar image id
+    /// get query embedding from search text or similar image id, computed by
+    /// the given provider snapshot (None = built-in engine)
     pub fn get_query_embedding(
         state: &State<t_ai::AiState>,
         params: &ImageSearchParams,
+        provider: Option<&OmlxEmbeddingSettings>,
     ) -> Result<Option<Vec<f32>>, String> {
         if !params.search_text.is_empty() {
             // The oMLX provider computes text embeddings over HTTP and must
             // not hold the ONNX engine lock while the request is in flight.
-            if let Some(settings) = crate::t_omlx::active_settings() {
+            if let Some(settings) = provider {
                 return Ok(Some(crate::t_omlx::embed_query_text(
-                    &settings,
+                    settings,
                     &params.search_text,
                 )?));
             }
             let mut engine = state.0.lock().unwrap();
             Ok(Some(engine.encode_text(&params.search_text)?))
         } else if let Some(file_id) = params.file_id.filter(|&id| id > 0) {
-            match Self::get_embedding_by_id(file_id) {
+            let model_id = crate::t_omlx::embed_model_id(provider);
+            match Self::get_embedding_for_model(file_id, &model_id) {
                 Ok(emb) => Ok(Some(emb)),
                 Err(_) => {
-                    Self::generate_embedding(state, file_id)?;
-                    Ok(Some(Self::get_embedding_by_id(file_id)?))
+                    Self::generate_embedding_with(state, file_id, provider)?;
+                    Ok(Some(Self::get_embedding_for_model(file_id, &model_id)?))
                 }
             }
         } else {
@@ -6415,11 +6421,25 @@ impl AFile {
         }
     }
 
-    /// generate embedding for a file
+    /// generate embedding for a file with the active provider
     pub fn generate_embedding(
         state: &State<t_ai::AiState>,
         file_id: i64,
     ) -> Result<String, String> {
+        let provider = crate::t_omlx::active_settings();
+        Self::generate_embedding_with(state, file_id, provider.as_ref())
+    }
+
+    /// generate embedding for a file with a provider snapshot (None = built-in
+    /// engine). The vector is stored under that snapshot's model id, even if
+    /// the active provider changes while it is being computed.
+    pub fn generate_embedding_with(
+        state: &State<t_ai::AiState>,
+        file_id: i64,
+        provider: Option<&OmlxEmbeddingSettings>,
+    ) -> Result<String, String> {
+        let model_id = crate::t_omlx::embed_model_id(provider);
+
         // 1. Fetch file info to get path
         let file_opt = Self::get_file_info(file_id).map_err(|e| e.to_string())?;
         let file = file_opt.ok_or("File not found")?;
@@ -6433,7 +6453,7 @@ impl AFile {
         let file_path = file.file_path.ok_or("File path not resolved")?;
 
         // 3. Check if embedding exists
-        if let Ok(embeds) = Self::get_embedding_by_id(file_id) {
+        if let Ok(embeds) = Self::get_embedding_for_model(file_id, &model_id) {
             if !embeds.is_empty() {
                 return Ok("Embedding already exists".to_string());
             }
@@ -6442,7 +6462,7 @@ impl AFile {
         // 4. Generate embedding
         // The oMLX provider embeds image bytes over HTTP (no engine lock);
         // the built-in provider keeps the in-process ONNX path.
-        let embedding = if let Some(settings) = crate::t_omlx::active_settings() {
+        let embedding = if let Some(settings) = provider {
             // Thumbnails are always in a server-decodable format; regenerate
             // the cached thumbnail when the cache file is missing.
             let library_id = AThumb::get_current_library_id();
@@ -6460,7 +6480,7 @@ impl AFile {
                     bytes
                 }
             };
-            crate::t_omlx::embed_single_image(&settings, &image_bytes)?
+            crate::t_omlx::embed_single_image(settings, &image_bytes)?
         } else {
             let mut engine = state.0.lock().unwrap();
 
@@ -6509,59 +6529,87 @@ impl AFile {
         };
 
         // 5. Save to DB
-        let _ =
-            Self::update_embedding(file_id, embedding).map_err(|e| format!("DB Error: {}", e))?;
+        Self::update_embedding(file_id, &embedding, &model_id)
+            .map_err(|e| format!("DB Error: {}", e))?;
 
         Ok("Embedding generated and saved".to_string())
     }
 
-    /// Update embedding for a file
-    pub fn update_embedding(file_id: i64, embedding: Vec<f32>) -> Result<usize, String> {
-        // Convert Vec<f32> to Vec<u8>
-        let mut bytes = Vec::with_capacity(embedding.len() * 4);
-        for val in embedding {
-            bytes.extend_from_slice(&val.to_le_bytes());
-        }
-
-        let conn = open_conn()?;
-        let result = conn
-            .execute(
-                "UPDATE afiles SET embeds = ?1, embed_model = ?3 WHERE id = ?2",
-                params![bytes, file_id, crate::t_omlx::active_model_id()],
-            )
-            .map_err(|e| e.to_string())?;
-        Ok(result)
+    /// Update embedding for a file, labelled with the model that produced it
+    pub fn update_embedding(file_id: i64, embedding: &[f32], model_id: &str) -> Result<usize, String> {
+        Self::store_embeddings_on(&*open_conn()?, [(file_id, embedding)], model_id)
     }
 
-    /// Embedding for a file, but only when it was produced by the currently
-    /// active model. Vectors from different models live in different spaces
-    /// and must never be compared.
-    pub fn get_embedding_by_id(file_id: i64) -> Result<Vec<f32>, String> {
-        let conn = open_conn()?;
+    /// Store a batch of embeddings produced by `model_id` in one transaction.
+    pub fn store_embeddings(results: &[(i64, Vec<f32>)], model_id: &str) -> Result<usize, String> {
+        Self::store_embeddings_on(
+            &*open_conn()?,
+            results.iter().map(|(file_id, vector)| (*file_id, vector.as_slice())),
+            model_id,
+        )
+    }
+
+    fn store_embeddings_on<'a>(
+        conn: &Connection,
+        items: impl IntoIterator<Item = (i64, &'a [f32])>,
+        model_id: &str,
+    ) -> Result<usize, String> {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut updated = 0;
+        {
+            let mut stmt = tx
+                .prepare_cached("UPDATE afiles SET embeds = ?1, embed_model = ?3 WHERE id = ?2")
+                .map_err(|e| e.to_string())?;
+            for (file_id, embedding) in items {
+                let bytes: Vec<u8> = embedding.iter().flat_map(|value| value.to_le_bytes()).collect();
+                updated += stmt
+                    .execute(params![bytes, file_id, model_id])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(updated)
+    }
+
+    fn embedding_from_blob(blob: &[u8]) -> Vec<f32> {
+        blob.chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect()
+    }
+
+    /// Embedding for a file, but only when it was produced by `model_id`.
+    /// Vectors from different models live in different spaces and must never
+    /// be compared.
+    pub fn get_embedding_for_model(file_id: i64, model_id: &str) -> Result<Vec<f32>, String> {
+        Self::get_embedding_for_model_on(&*open_conn()?, file_id, model_id)
+    }
+
+    fn get_embedding_for_model_on(
+        conn: &Connection,
+        file_id: i64,
+        model_id: &str,
+    ) -> Result<Vec<f32>, String> {
         let embeds_blob: Vec<u8> = conn
             .query_row(
                 "SELECT embeds FROM afiles
                  WHERE id = ?1 AND embeds IS NOT NULL
                    AND COALESCE(embed_model, ?3) = ?2",
-                params![file_id, crate::t_omlx::active_model_id(), crate::t_omlx::BUILTIN_EMBED_MODEL],
+                params![file_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
                 |row| row.get(0),
             )
             .optional()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Image embedding not found".to_string())?;
-
-        let embedding: Vec<f32> = embeds_blob
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect();
-
-        Ok(embedding)
+        Ok(Self::embedding_from_blob(&embeds_blob))
     }
 
     /// How many image files have embeddings for the given model, and how
     /// many image files exist in total.
     pub fn embedding_coverage(model_id: &str) -> Result<(i64, i64), String> {
-        let conn = open_conn()?;
+        Self::embedding_coverage_on(&*open_conn()?, model_id)
+    }
+
+    fn embedding_coverage_on(conn: &Connection, model_id: &str) -> Result<(i64, i64), String> {
         let total: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM afiles WHERE file_type IN (1, 3)",
@@ -6581,39 +6629,51 @@ impl AFile {
         Ok((indexed, total))
     }
 
-    /// A random sample of stored embeddings for a model, used to calibrate
-    /// search score bands for the active provider.
-    pub fn sample_embedding_vectors(model_id: &str, limit: i64) -> Result<Vec<Vec<f32>>, String> {
-        let conn = open_conn()?;
+    /// A random sample of stored `dimensions`-sized embeddings for a model,
+    /// used to calibrate search score bands for the active provider.
+    pub fn sample_embedding_vectors(
+        model_id: &str,
+        dimensions: usize,
+        limit: i64,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        Self::sample_embedding_vectors_on(&*open_conn()?, model_id, dimensions, limit)
+    }
+
+    fn sample_embedding_vectors_on(
+        conn: &Connection,
+        model_id: &str,
+        dimensions: usize,
+        limit: i64,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        // Pick ids first so the sort does not drag every blob along. A
+        // hashed id order spreads the sample across the library like a random
+        // one, but stays the same between runs: a fresh random sample moved
+        // the floor enough to flip borderline queries on every recalibration.
         let mut stmt = conn
             .prepare(
-                "SELECT embeds FROM afiles
-                 WHERE embeds IS NOT NULL AND COALESCE(embed_model, ?2) = ?1
-                 ORDER BY RANDOM() LIMIT ?3",
+                "SELECT embeds FROM afiles WHERE id IN (
+                     SELECT id FROM afiles
+                     WHERE embeds IS NOT NULL AND COALESCE(embed_model, ?2) = ?1
+                       AND length(embeds) = ?4
+                     ORDER BY (id * 2654435761) % 4294967296 LIMIT ?3
+                 )",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
-                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit],
+                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit, dimensions * 4],
                 |row| row.get::<_, Vec<u8>>(0),
             )
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|blob| {
-                blob.chunks_exact(4)
-                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect::<Vec<f32>>()
-            })
-            .map(|vector| {
-                if vector.is_empty() {
-                    Err("Empty embedding blob".to_string())
-                } else {
-                    Ok(vector)
-                }
-            })
-            .collect()
+        let mut vectors = Vec::new();
+        for blob in rows {
+            let vector = Self::embedding_from_blob(&blob.map_err(|e| e.to_string())?);
+            if vector.is_empty() {
+                return Err("Empty embedding blob".to_string());
+            }
+            vectors.push(vector);
+        }
+        Ok(vectors)
     }
 
     /// Next page of image files that still need an embedding for the given
@@ -6623,7 +6683,15 @@ impl AFile {
         limit: i64,
         model_id: &str,
     ) -> Result<Vec<(i64, String)>, String> {
-        let conn = open_conn()?;
+        Self::get_embedding_reindex_batch_on(&*open_conn()?, last_id, limit, model_id)
+    }
+
+    fn get_embedding_reindex_batch_on(
+        conn: &Connection,
+        last_id: i64,
+        limit: i64,
+        model_id: &str,
+    ) -> Result<Vec<(i64, String)>, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT a.id, b.path || '/' || a.name
@@ -6650,68 +6718,48 @@ impl AFile {
         state: &State<t_ai::AiState>,
         params: ImageSearchParams,
     ) -> Result<Vec<Self>, String> {
+        // One provider snapshot for the query vector, the stored vectors it
+        // is compared with, and the score filter.
+        let provider = crate::t_omlx::active_settings();
+        let model_id = crate::t_omlx::embed_model_id(provider.as_ref());
+
         // 1. Determine Target Embedding
-        let embedding_opt = Self::get_query_embedding(state, &params)?;
-        let embedding =
-            embedding_opt.ok_or_else(|| "No file_id or search_text provided".to_string())?;
+        let embedding = Self::get_query_embedding(state, &params, provider.as_ref())?
+            .ok_or_else(|| "No file_id or search_text provided".to_string())?;
 
         // 2. Perform Vector Search
         let conn = open_conn()?;
+        let sql = Self::embedding_search_sql(params.file_type);
+        let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, &embedding)?;
 
-        let mut query = "SELECT a.id, a.embeds
-            FROM afiles a
-            LEFT JOIN afolders b ON a.folder_id = b.id
-            WHERE a.embeds IS NOT NULL
-              AND COALESCE(a.embed_model, ?1) = ?1"
-            .to_string();
-
-        query.push_str(" AND ");
-        query.push_str(&Self::search_exclusion_condition("b"));
-
-        query.push_str(&Self::album_filter_sql("a"));
-
-        if let Some(ft_condition) = Self::build_file_type_condition(params.file_type) {
-            query.push_str(" AND ");
-            query.push_str(&ft_condition);
-        }
-
-        let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-
-        let rows: Vec<(i64, Vec<u8>)> = stmt
-            .query_map(params![crate::t_omlx::active_model_id()], |row| {
-                let id: i64 = row.get(0)?;
-                let embeds_blob: Vec<u8> = row.get(1)?;
-                Ok((id, embeds_blob))
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-
+        // 3. Filter. The oMLX provider filters relative to the best match
+        // (calibrated per library and model); the built-in CLIP path keeps
+        // its absolute threshold. Image-to-image searches anchor on the best
+        // match excluding the source file, which would otherwise always
+        // score 1.0. Text searches that fall just short of the confidence
+        // floor still return their top results when those results form a
+        // coherent cluster — abstract but present concepts (e.g. "felino"
+        // matching cats and tigers) score lower than concrete ones yet
+        // cohere, unlike near-miss noise.
         let threshold = params.threshold.clamp(0.0, 1.0);
-        let query_norm = embedding
-            .iter()
-            .map(|value| value * value)
-            .sum::<f32>()
-            .sqrt();
-
-        // Calculate similarity
-        let scores = Self::score_embeddings(&embedding, query_norm, &rows);
-
-        // The oMLX provider filters relative to the best match (calibrated
-        // per library); the built-in CLIP path keeps its absolute threshold.
-        // Image-to-image searches anchor on the best match excluding the
-        // source file, which would otherwise always score 1.0. Text searches
-        // that fall just short of the confidence floor still return their
-        // top results when those results form a coherent cluster — abstract
-        // but present concepts (e.g. "felino" matching cats and tigers)
-        // score lower than concrete ones yet cohere, unlike near-miss noise.
         let query_file_id = if params.search_text.is_empty() {
             params.file_id.filter(|&id| id > 0)
         } else {
             None
         };
-        let coherence = Self::top_cluster_coherence(&scores, &rows);
-        let mut scores = Self::filter_search_scores(scores, threshold, query_file_id, coherence);
+        let calibration = match provider.as_ref() {
+            Some(settings) => Some(crate::t_omlx::calibration_for(
+                settings,
+                &t_config::current_library_id()?,
+            )),
+            None => None,
+        };
+        let mut scores =
+            Self::filter_search_scores(scores, threshold, query_file_id, calibration, |top_ids| {
+                Self::get_embeddings_by_ids_on(&conn, top_ids)
+                    .map(|vectors| Self::mean_pairwise_cosine(&vectors))
+                    .unwrap_or(0.0)
+            });
 
         // Sort by score descending
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6733,10 +6781,67 @@ impl AFile {
         Ok(results)
     }
 
-    /// Cosine score of the query against every stored embedding. Large
-    /// scans are split across worker threads; results keep the row order,
-    /// and dimension-mismatched rows score 0 exactly like the previous
-    /// single-threaded loop.
+    /// Stored embeddings a similarity search compares against: vectors from
+    /// the query's model (`?1`) and size (`?3` bytes) in searchable folders.
+    /// A NULL embed_model marks rows written before the column existed, which
+    /// always came from the built-in CLIP model (`?2`) — never from the
+    /// active provider. The size check keeps vectors that were stored under
+    /// the wrong label out of the comparison.
+    fn embedding_search_sql(file_type: i64) -> String {
+        let mut query = "SELECT a.id, a.embeds
+            FROM afiles a
+            LEFT JOIN afolders b ON a.folder_id = b.id
+            WHERE a.embeds IS NOT NULL
+              AND COALESCE(a.embed_model, ?2) = ?1
+              AND length(a.embeds) = ?3"
+            .to_string();
+
+        query.push_str(" AND ");
+        query.push_str(&Self::search_exclusion_condition("b"));
+
+        query.push_str(&Self::album_filter_sql("a"));
+
+        if let Some(ft_condition) = Self::build_file_type_condition(file_type) {
+            query.push_str(" AND ");
+            query.push_str(&ft_condition);
+        }
+        query
+    }
+
+    /// Cosine score of `query` against every row `sql` selects for
+    /// `model_id`. Rows stream through in fixed-size chunks so memory stays
+    /// flat however large the library is; only (id, score) pairs are kept.
+    fn score_stored_embeddings_on(
+        conn: &Connection,
+        sql: &str,
+        model_id: &str,
+        query: &[f32],
+    ) -> Result<Vec<(i64, f32)>, String> {
+        let query_norm = query.iter().map(|value| value * value).sum::<f32>().sqrt();
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let mut rows = stmt
+            .query(params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, query.len() * 4])
+            .map_err(|e| e.to_string())?;
+
+        let mut scores: Vec<(i64, f32)> = Vec::new();
+        let mut chunk: Vec<(i64, Vec<u8>)> = Vec::with_capacity(SCORE_CHUNK_ROWS);
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            chunk.push((
+                row.get(0).map_err(|e| e.to_string())?,
+                row.get(1).map_err(|e| e.to_string())?,
+            ));
+            if chunk.len() == SCORE_CHUNK_ROWS {
+                scores.extend(Self::score_embeddings(query, query_norm, &chunk));
+                chunk.clear();
+            }
+        }
+        scores.extend(Self::score_embeddings(query, query_norm, &chunk));
+        Ok(scores)
+    }
+
+    /// Cosine score of the query against a chunk of stored embeddings. Large
+    /// chunks are split across worker threads; results keep the row order,
+    /// and dimension-mismatched rows score 0 exactly like the serial loop.
     fn score_embeddings(query: &[f32], query_norm: f32, rows: &[(i64, Vec<u8>)]) -> Vec<(i64, f32)> {
         if rows.len() < PARALLEL_SCORE_MIN_ROWS {
             return rows
@@ -6776,77 +6881,54 @@ impl AFile {
         })
     }
 
-    /// Mean pairwise cosine among the top-scoring results. Present-but-
-    /// abstract concepts produce a coherent top cluster (their photos are
-    /// mutually similar); near-miss noise does not. `scores` and `rows` are
-    /// parallel arrays from `score_embeddings`.
-    fn top_cluster_coherence(scores: &[(i64, f32)], rows: &[(i64, Vec<u8>)]) -> f32 {
-        const TOP_K: usize = 8;
-        const MIN_DIM: usize = 2;
-        let mut top: Vec<usize> = (0..scores.len()).collect();
-        top.sort_by(|&a, &b| {
-            scores[b]
-                .1
-                .partial_cmp(&scores[a].1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        top.truncate(TOP_K);
-
-        let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(top.len());
-        for index in top {
-            let Some((_, blob)) = rows.get(index) else { continue };
-            if blob.len() % 4 != 0 {
-                continue;
-            }
-            vectors.push(
-                blob.chunks_exact(4)
-                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect::<Vec<f32>>(),
-            );
+    fn get_embeddings_by_ids_on(conn: &Connection, ids: &[i64]) -> Result<Vec<Vec<f32>>, String> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
         }
-        if vectors.len() < MIN_DIM {
-            return 0.0;
-        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT embeds FROM afiles WHERE embeds IS NOT NULL AND id IN ({})",
+                placeholders
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params_from_iter(ids.iter()), |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|e| e.to_string())?;
+        rows.map(|blob| blob.map(|blob| Self::embedding_from_blob(&blob)).map_err(|e| e.to_string()))
+            .collect()
+    }
 
+    /// Mean pairwise cosine among vectors. Present-but-abstract concepts
+    /// produce a coherent top cluster (their photos are mutually similar);
+    /// near-miss noise does not.
+    fn mean_pairwise_cosine(vectors: &[Vec<f32>]) -> f32 {
         let mut total = 0.0f32;
         let mut pairs = 0usize;
-        for i in 0..vectors.len() {
-            for j in (i + 1)..vectors.len() {
-                if vectors[i].len() == vectors[j].len() {
-                    let mut dot = 0.0f32;
-                    let mut norm_a = 0.0f32;
-                    let mut norm_b = 0.0f32;
-                    for (x, y) in vectors[i].iter().zip(&vectors[j]) {
-                        dot += x * y;
-                        norm_a += x * x;
-                        norm_b += y * y;
-                    }
-                    if norm_a > 0.0 && norm_b > 0.0 {
-                        total += dot / (norm_a * norm_b).sqrt();
-                        pairs += 1;
-                    }
+        for (i, a) in vectors.iter().enumerate() {
+            for b in &vectors[i + 1..] {
+                if a.len() == b.len() && !a.is_empty() {
+                    total += crate::t_omlx::cosine_similarity(a, b);
+                    pairs += 1;
                 }
             }
         }
-        if pairs == 0 {
-            0.0
-        } else {
-            total / pairs as f32
-        }
+        if pairs == 0 { 0.0 } else { total / pairs as f32 }
     }
 
     /// Apply the provider-appropriate score filter to search results.
     ///
-    /// The built-in CLIP model uses the plain absolute threshold. Server
-    /// embedding models (oMLX provider) concentrate cosine scores in a high,
-    /// narrow band whose position depends on the library's content, so a
-    /// fixed absolute threshold both admits unrelated images and cuts real
-    /// matches. Instead, keep results close to the best match, and treat a
-    /// best match below the calibrated floor as "no results" — except when
-    /// the top results form a coherent cluster, which indicates a present
-    /// but abstract concept and returns the top few results as best
-    /// guesses. The frontend threshold selects strictness (a multiplier on
-    /// the calibrated margin) rather than an absolute cutoff.
+    /// Without a calibration (built-in CLIP model) this is the plain absolute
+    /// threshold. Server embedding models (oMLX provider) concentrate cosine
+    /// scores in a high, narrow band whose position depends on the library's
+    /// content, so a fixed absolute threshold both admits unrelated images
+    /// and cuts real matches. Instead, keep results close to the best match,
+    /// and treat a best match below the calibrated floor as "no results" —
+    /// except when the top results form a coherent cluster (as measured by
+    /// `coherence_of`, called only in that case), which indicates a present
+    /// but abstract concept and returns the top few results as best guesses.
+    /// The frontend threshold selects strictness (a multiplier on the
+    /// calibrated margin) rather than an absolute cutoff.
     ///
     /// `query_file_id` is set for image-to-image searches; the anchor skips
     /// that row so the source file's self-match (1.0) cannot dominate.
@@ -6854,14 +6936,17 @@ impl AFile {
         mut scores: Vec<(i64, f32)>,
         threshold: f32,
         query_file_id: Option<i64>,
-        coherence: f32,
+        calibration: Option<ScoreCalibration>,
+        coherence_of: impl FnOnce(&[i64]) -> f32,
     ) -> Vec<(i64, f32)> {
-        if !crate::t_omlx::is_active() || scores.is_empty() {
+        let Some(calibration) = calibration else {
             scores.retain(|(_, score)| *score > threshold);
+            return scores;
+        };
+        if scores.is_empty() {
             return scores;
         }
 
-        let calibration = crate::t_omlx::effective_calibration();
         let best = scores
             .iter()
             .filter(|(id, _)| Some(*id) != query_file_id)
@@ -6877,16 +6962,16 @@ impl AFile {
             // Just-short best match with a coherent top cluster: present but
             // abstract concept — offer the top results as best guesses.
             let soft_floor = calibration.floor - calibration.margin * 0.5;
-            if query_file_id.is_none()
-                && best >= soft_floor
-                && coherence >= COHERENT_CLUSTER_MIN
-            {
+            if query_file_id.is_none() && best >= soft_floor {
                 scores.sort_by(|a, b| {
                     b.1.partial_cmp(&a.1)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 scores.truncate(BEST_GUESS_LIMIT);
-                return scores;
+                let top_ids: Vec<i64> = scores.iter().map(|(id, _)| *id).collect();
+                if coherence_of(&top_ids) >= COHERENT_CLUSTER_MIN {
+                    return scores;
+                }
             }
             return Vec::new();
         }
@@ -10760,5 +10845,210 @@ mod raw_display_cache_tests {
         assert_ne!(key(RawPreviewMode::Embedded, 1), key(RawPreviewMode::Rendered, 1));
         assert_eq!(key(RawPreviewMode::Embedded, 0), key(RawPreviewMode::Embedded, 1));
         assert_ne!(key(RawPreviewMode::Embedded, 6), key(RawPreviewMode::Embedded, 1));
+    }
+}
+
+#[cfg(test)]
+mod embedding_search_tests {
+    use super::*;
+    use crate::t_omlx::BUILTIN_EMBED_MODEL;
+
+    const OMLX_MODEL: &str = "omlx:embeddinggemma-2-8bit:512";
+
+    fn blob(vector: &[f32]) -> Vec<u8> {
+        vector.iter().flat_map(|value| value.to_le_bytes()).collect()
+    }
+
+    fn fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE albums(id INTEGER PRIMARY KEY, path TEXT, file_types INTEGER,
+                small_image_filter INTEGER, excluded_folders TEXT);
+            INSERT INTO albums VALUES(1, '/photos', 7, 0, '[]');
+            CREATE TABLE afolders(id INTEGER PRIMARY KEY, album_id INTEGER, path TEXT,
+                is_excluded_from_search INTEGER DEFAULT 0);
+            INSERT INTO afolders(id, album_id, path) VALUES(1, 1, '/photos');
+            CREATE TABLE afiles(id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT,
+                file_type INTEGER, width INTEGER, height INTEGER, live_photo_video_id INTEGER,
+                media_subtype TEXT, embeds BLOB, embed_model TEXT);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert(conn: &Connection, id: i64, vector: Option<&[f32]>, model: Option<&str>) {
+        conn.execute(
+            "INSERT INTO afiles(id, folder_id, name, file_type, width, height, embeds, embed_model)
+             VALUES(?1, 1, ?2, 1, 1000, 1000, ?3, ?4)",
+            params![id, format!("{}.jpg", id), vector.map(blob), model],
+        )
+        .unwrap();
+    }
+
+    /// Legacy CLIP rows (NULL model) and oMLX rows with the same dimensions:
+    /// the exact shape where a cross-model comparison would go unnoticed.
+    fn mixed_library() -> Connection {
+        let conn = fixture();
+        insert(&conn, 1, Some(&[1.0, 0.0, 0.0]), None);
+        insert(&conn, 2, Some(&[0.9, 0.1, 0.0]), Some(BUILTIN_EMBED_MODEL));
+        insert(&conn, 3, Some(&[1.0, 0.0, 0.0]), Some(OMLX_MODEL));
+        insert(&conn, 4, None, None);
+        conn
+    }
+
+    fn search_ids(conn: &Connection, model_id: &str) -> Vec<i64> {
+        let sql = AFile::embedding_search_sql(0);
+        AFile::score_stored_embeddings_on(conn, &sql, model_id, &[1.0, 0.0, 0.0])
+            .unwrap()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    #[test]
+    fn legacy_null_embeddings_never_reach_omlx_searches() {
+        let conn = mixed_library();
+        assert_eq!(search_ids(&conn, OMLX_MODEL), vec![3]);
+        assert_eq!(search_ids(&conn, BUILTIN_EMBED_MODEL), vec![1, 2]);
+    }
+
+    #[test]
+    fn legacy_null_embeddings_count_as_builtin_everywhere() {
+        let conn = mixed_library();
+
+        assert!(AFile::get_embedding_for_model_on(&conn, 1, OMLX_MODEL).is_err());
+        assert_eq!(
+            AFile::get_embedding_for_model_on(&conn, 1, BUILTIN_EMBED_MODEL).unwrap(),
+            vec![1.0, 0.0, 0.0]
+        );
+
+        assert_eq!(AFile::embedding_coverage_on(&conn, OMLX_MODEL).unwrap(), (1, 4));
+        assert_eq!(AFile::embedding_coverage_on(&conn, BUILTIN_EMBED_MODEL).unwrap(), (2, 4));
+
+        assert_eq!(AFile::sample_embedding_vectors_on(&conn, OMLX_MODEL, 3, 10).unwrap().len(), 1);
+        assert_eq!(AFile::sample_embedding_vectors_on(&conn, BUILTIN_EMBED_MODEL, 3, 10).unwrap().len(), 2);
+
+        let pending = |model| -> Vec<i64> {
+            AFile::get_embedding_reindex_batch_on(&conn, 0, 100, model)
+                .unwrap()
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(pending(OMLX_MODEL), vec![1, 2, 4], "legacy rows need an oMLX re-index");
+        assert_eq!(pending(BUILTIN_EMBED_MODEL), vec![3, 4]);
+    }
+
+    #[test]
+    fn stored_embeddings_carry_the_model_passed_in() {
+        let conn = mixed_library();
+        let results = vec![(1, vec![0.0, 1.0, 0.0]), (4, vec![0.0, 0.0, 1.0])];
+        let updated = AFile::store_embeddings_on(
+            &conn,
+            results.iter().map(|(id, vector)| (*id, vector.as_slice())),
+            OMLX_MODEL,
+        )
+        .unwrap();
+        assert_eq!(updated, 2);
+        assert_eq!(search_ids(&conn, OMLX_MODEL), vec![1, 3, 4]);
+        assert_eq!(search_ids(&conn, BUILTIN_EMBED_MODEL), vec![2]);
+    }
+
+    #[test]
+    fn streamed_scoring_matches_a_serial_scan_across_chunks() {
+        let conn = fixture();
+        let rows = SCORE_CHUNK_ROWS * 2 + 123;
+        let tx = conn.unchecked_transaction().unwrap();
+        for id in 1..=rows as i64 {
+            let angle = id as f32 * 0.001;
+            insert(&tx, id, Some(&[angle.cos(), angle.sin(), 0.5]), Some(OMLX_MODEL));
+        }
+        tx.commit().unwrap();
+
+        let query = [1.0, 0.0, 0.5];
+        let sql = AFile::embedding_search_sql(0);
+        let streamed = AFile::score_stored_embeddings_on(&conn, &sql, OMLX_MODEL, &query).unwrap();
+
+        let norm = query.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let mut stmt = conn.prepare("SELECT id, embeds FROM afiles ORDER BY id").unwrap();
+        let serial: Vec<(i64, f32)> = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)))
+            .unwrap()
+            .map(|row| {
+                let (id, blob) = row.unwrap();
+                (id, AFile::cosine_similarity_blob(&query, norm, &blob))
+            })
+            .collect();
+
+        assert_eq!(streamed.len(), rows);
+        assert_eq!(streamed, serial);
+    }
+
+    #[test]
+    fn vectors_of_another_size_are_never_compared() {
+        // Real-world case: 512-dimension vectors stored under the
+        // full-size label, while full-size queries are 768-dimensional.
+        let conn = fixture();
+        insert(&conn, 1, Some(&[1.0, 0.0, 0.0]), Some(OMLX_MODEL));
+        insert(&conn, 2, Some(&[1.0, 0.0]), Some(OMLX_MODEL));
+        assert_eq!(search_ids(&conn, OMLX_MODEL), vec![1]);
+        assert_eq!(AFile::sample_embedding_vectors_on(&conn, OMLX_MODEL, 2, 10).unwrap(), vec![vec![1.0, 0.0]]);
+    }
+
+    fn calibration() -> Option<ScoreCalibration> {
+        Some(ScoreCalibration { floor: 0.60, margin: 0.04 })
+    }
+
+    #[test]
+    fn builtin_filter_keeps_its_absolute_threshold() {
+        let scores = vec![(1, 0.30), (2, 0.25), (3, 0.27)];
+        let kept = AFile::filter_search_scores(scores, 0.26, None, None, |_| unreachable!());
+        assert_eq!(kept, vec![(1, 0.30), (3, 0.27)]);
+    }
+
+    #[test]
+    fn calibrated_filter_keeps_results_near_the_best_match() {
+        let scores = vec![(1, 0.66), (2, 0.64), (3, 0.61), (4, 0.55)];
+        // Standard strictness (1.0x margin): cut at 0.66 - 0.04 = 0.62.
+        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| unreachable!());
+        assert_eq!(kept, vec![(1, 0.66), (2, 0.64)]);
+    }
+
+    #[test]
+    fn calibrated_filter_returns_nothing_for_absent_concepts() {
+        let scores = vec![(1, 0.50), (2, 0.49)];
+        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| {
+            panic!("coherence is only measured just below the floor")
+        });
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn coherent_just_short_matches_become_best_guesses() {
+        let scores: Vec<(i64, f32)> = (1..=12).map(|id| (id, 0.59 - id as f32 * 0.001)).collect();
+        let mut asked = Vec::new();
+        let kept = AFile::filter_search_scores(scores.clone(), 0.65, None, calibration(), |ids| {
+            asked = ids.to_vec();
+            0.80
+        });
+        assert_eq!(asked, (1..=8).collect::<Vec<_>>());
+        assert_eq!(kept.len(), 8);
+
+        let incoherent = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| 0.50);
+        assert!(incoherent.is_empty());
+    }
+
+    #[test]
+    fn image_search_anchors_on_the_best_match_other_than_itself() {
+        let scores = vec![(7, 1.0), (1, 0.80), (2, 0.78), (3, 0.70)];
+        let kept = AFile::filter_search_scores(scores, 0.75, Some(7), calibration(), |_| unreachable!());
+        assert_eq!(kept, vec![(7, 1.0), (1, 0.80), (2, 0.78)]);
+    }
+
+    #[test]
+    fn mean_pairwise_cosine_ignores_mismatched_dimensions() {
+        let vectors = vec![vec![1.0, 0.0], vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 0.0, 0.0]];
+        // Pairs with matching dimensions: (0,1)=1, (0,2)=0, (1,2)=0.
+        assert!((AFile::mean_pairwise_cosine(&vectors) - 1.0 / 3.0).abs() < 1e-6);
     }
 }
