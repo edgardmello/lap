@@ -42,6 +42,14 @@ const MAX_BACKGROUND_THUMB_GENERATIONS: usize = 4;
 /// Below this many candidates, embedding search stays on the calling thread;
 /// larger scans are split across worker threads.
 const PARALLEL_SCORE_MIN_ROWS: usize = 4096;
+/// Minimum mean pairwise cosine of the top results to treat a just-short
+/// query as a present-but-abstract concept (measured on a mixed library:
+/// same-subject clusters 0.77-0.90, borderline same-subject 0.69, so 0.75
+/// separates confident clusters from noise).
+const COHERENT_CLUSTER_MIN: f32 = 0.75;
+/// How many top results to return as best guesses for coherent just-short
+/// text queries.
+const BEST_GUESS_LIMIT: usize = 8;
 
 fn subtree_like_pattern(path: &str) -> String {
     let separator = std::path::MAIN_SEPARATOR;
@@ -6692,13 +6700,18 @@ impl AFile {
         // The oMLX provider filters relative to the best match (calibrated
         // per library); the built-in CLIP path keeps its absolute threshold.
         // Image-to-image searches anchor on the best match excluding the
-        // source file, which would otherwise always score 1.0.
+        // source file, which would otherwise always score 1.0. Text searches
+        // that fall just short of the confidence floor still return their
+        // top results when those results form a coherent cluster — abstract
+        // but present concepts (e.g. "felino" matching cats and tigers)
+        // score lower than concrete ones yet cohere, unlike near-miss noise.
         let query_file_id = if params.search_text.is_empty() {
             params.file_id.filter(|&id| id > 0)
         } else {
             None
         };
-        let mut scores = Self::filter_search_scores(scores, threshold, query_file_id);
+        let coherence = Self::top_cluster_coherence(&scores, &rows);
+        let mut scores = Self::filter_search_scores(scores, threshold, query_file_id, coherence);
 
         // Sort by score descending
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6763,6 +6776,65 @@ impl AFile {
         })
     }
 
+    /// Mean pairwise cosine among the top-scoring results. Present-but-
+    /// abstract concepts produce a coherent top cluster (their photos are
+    /// mutually similar); near-miss noise does not. `scores` and `rows` are
+    /// parallel arrays from `score_embeddings`.
+    fn top_cluster_coherence(scores: &[(i64, f32)], rows: &[(i64, Vec<u8>)]) -> f32 {
+        const TOP_K: usize = 8;
+        const MIN_DIM: usize = 2;
+        let mut top: Vec<usize> = (0..scores.len()).collect();
+        top.sort_by(|&a, &b| {
+            scores[b]
+                .1
+                .partial_cmp(&scores[a].1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        top.truncate(TOP_K);
+
+        let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(top.len());
+        for index in top {
+            let Some((_, blob)) = rows.get(index) else { continue };
+            if blob.len() % 4 != 0 {
+                continue;
+            }
+            vectors.push(
+                blob.chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect::<Vec<f32>>(),
+            );
+        }
+        if vectors.len() < MIN_DIM {
+            return 0.0;
+        }
+
+        let mut total = 0.0f32;
+        let mut pairs = 0usize;
+        for i in 0..vectors.len() {
+            for j in (i + 1)..vectors.len() {
+                if vectors[i].len() == vectors[j].len() {
+                    let mut dot = 0.0f32;
+                    let mut norm_a = 0.0f32;
+                    let mut norm_b = 0.0f32;
+                    for (x, y) in vectors[i].iter().zip(&vectors[j]) {
+                        dot += x * y;
+                        norm_a += x * x;
+                        norm_b += y * y;
+                    }
+                    if norm_a > 0.0 && norm_b > 0.0 {
+                        total += dot / (norm_a * norm_b).sqrt();
+                        pairs += 1;
+                    }
+                }
+            }
+        }
+        if pairs == 0 {
+            0.0
+        } else {
+            total / pairs as f32
+        }
+    }
+
     /// Apply the provider-appropriate score filter to search results.
     ///
     /// The built-in CLIP model uses the plain absolute threshold. Server
@@ -6770,9 +6842,11 @@ impl AFile {
     /// narrow band whose position depends on the library's content, so a
     /// fixed absolute threshold both admits unrelated images and cuts real
     /// matches. Instead, keep results close to the best match, and treat a
-    /// best match below the calibrated floor as "no results". The frontend
-    /// threshold selects strictness (a multiplier on the calibrated margin)
-    /// rather than an absolute cutoff.
+    /// best match below the calibrated floor as "no results" — except when
+    /// the top results form a coherent cluster, which indicates a present
+    /// but abstract concept and returns the top few results as best
+    /// guesses. The frontend threshold selects strictness (a multiplier on
+    /// the calibrated margin) rather than an absolute cutoff.
     ///
     /// `query_file_id` is set for image-to-image searches; the anchor skips
     /// that row so the source file's self-match (1.0) cannot dominate.
@@ -6780,6 +6854,7 @@ impl AFile {
         mut scores: Vec<(i64, f32)>,
         threshold: f32,
         query_file_id: Option<i64>,
+        coherence: f32,
     ) -> Vec<(i64, f32)> {
         if !crate::t_omlx::is_active() || scores.is_empty() {
             scores.retain(|(_, score)| *score > threshold);
@@ -6797,9 +6872,25 @@ impl AFile {
             // behavior of returning it.
             return scores;
         }
+
         if best < calibration.floor {
+            // Just-short best match with a coherent top cluster: present but
+            // abstract concept — offer the top results as best guesses.
+            let soft_floor = calibration.floor - calibration.margin * 0.5;
+            if query_file_id.is_none()
+                && best >= soft_floor
+                && coherence >= COHERENT_CLUSTER_MIN
+            {
+                scores.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                scores.truncate(BEST_GUESS_LIMIT);
+                return scores;
+            }
             return Vec::new();
         }
+
         let margin = match query_file_id {
             // Text search: the threshold selects strictness (0.5x .. 1.5x of
             // the calibrated margin), coupled to the frontend's threshold

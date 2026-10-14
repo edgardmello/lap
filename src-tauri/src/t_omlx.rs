@@ -75,8 +75,10 @@ const CALIBRATION_PROBE_QUERIES: [&str; 6] = [
     "a building",
     "a plant",
 ];
-/// Stored-embedding sample size for calibration.
-const CALIBRATION_SAMPLE_SIZE: i64 = 100;
+/// Stored-embedding sample size for calibration. Larger samples keep the
+/// measured band stable across recalibrations (the floor moves by less than
+/// ~0.005 at this size on a several-thousand-photo library).
+const CALIBRATION_SAMPLE_SIZE: i64 = 300;
 /// Minimum sample the calibration accepts.
 const CALIBRATION_MIN_VECTORS: usize = 20;
 
