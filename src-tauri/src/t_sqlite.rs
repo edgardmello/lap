@@ -6445,25 +6445,9 @@ impl AFile {
         provider: Option<&OmlxEmbeddingSettings>,
     ) -> Result<String, String> {
         let model_id = crate::t_omlx::embed_model_id(provider);
-
-        // 1. Fetch file info to get path
-        let file_opt = Self::get_file_info(file_id).map_err(|e| e.to_string())?;
-        let file = file_opt.ok_or("File not found")?;
-
-        // 2. Check if it's an image
-        // file_type: 1 is image, 3 is HEIC
-        if file.file_type != Some(1) && file.file_type != Some(3) {
-            return Err("File is not an image".to_string());
-        }
-
-        let file_path = file.file_path.ok_or("File path not resolved")?;
-
-        // 3. Check if embedding exists
-        if let Ok(embeds) = Self::get_embedding_for_model(file_id, &model_id) {
-            if !embeds.is_empty() {
-                return Ok("Embedding already exists".to_string());
-            }
-        }
+        let Some(file_path) = Self::embedding_target(file_id, &model_id)? else {
+            return Ok("Embedding already exists".to_string());
+        };
 
         // 4. Generate embedding
         // The oMLX provider embeds image bytes over HTTP (no engine lock);
@@ -6539,6 +6523,40 @@ impl AFile {
             .map_err(|e| format!("DB Error: {}", e))?;
 
         Ok("Embedding generated and saved".to_string())
+    }
+
+    /// generate embedding for a file being indexed. With the oMLX provider the
+    /// request joins the files the indexer is processing concurrently in
+    /// shared batches (stored under the library guard), instead of one image
+    /// per request.
+    pub fn generate_embedding_for_index(
+        state: &State<t_ai::AiState>,
+        file_id: i64,
+    ) -> Result<String, String> {
+        let Some(settings) = crate::t_omlx::active_settings() else {
+            return Self::generate_embedding_with(state, file_id, None);
+        };
+        let Some(file_path) = Self::embedding_target(file_id, &settings.model_id())? else {
+            return Ok("Embedding already exists".to_string());
+        };
+        let library_id = t_config::current_library_id()?;
+        crate::t_omlx::embed_indexed_file(&settings, &library_id, file_id, &file_path)?;
+        Ok("Embedding generated and saved".to_string())
+    }
+
+    /// Path of an image file that still needs an embedding from `model_id`;
+    /// None when it already has one.
+    fn embedding_target(file_id: i64, model_id: &str) -> Result<Option<String>, String> {
+        let file = Self::get_file_info(file_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("File not found")?;
+        // file_type: 1 is image, 3 is HEIC
+        if file.file_type != Some(1) && file.file_type != Some(3) {
+            return Err("File is not an image".to_string());
+        }
+        let file_path = file.file_path.ok_or("File path not resolved")?;
+        let exists = Self::get_embedding_for_model(file_id, model_id).is_ok_and(|e| !e.is_empty());
+        Ok((!exists).then_some(file_path))
     }
 
     /// Update embedding for a file, labelled with the model that produced it

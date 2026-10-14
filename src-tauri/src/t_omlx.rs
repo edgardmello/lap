@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, mpsc};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -32,6 +32,9 @@ const REINDEX_CONCURRENCY: usize = 4;
 const MAX_CONSECUTIVE_BATCH_ERRORS: usize = 3;
 /// Page size when collecting the re-index work list.
 const REINDEX_PAGE_SIZE: i64 = 512;
+/// Files the indexer may have waiting on embeddings at once with the oMLX
+/// provider: enough to fill every worker's batch.
+pub const INDEX_CONCURRENT_FILES: usize = REINDEX_CONCURRENCY * REINDEX_BATCH_SIZE;
 
 /// Model id stamped on embeddings produced by the built-in ONNX engine.
 /// Rows written before the embed_model column existed are treated as this.
@@ -834,7 +837,8 @@ impl BatchIo for ServerBatchIo<'_> {
 
 #[derive(Debug, PartialEq)]
 struct BatchOutcome {
-    stored: i64,
+    /// Files whose vectors were written.
+    stored: Vec<i64>,
     failed: i64,
 }
 
@@ -874,7 +878,7 @@ fn embed_batch(
         })
         .map_err(BatchError::Abort)?;
     if inputs.is_empty() {
-        return Ok(BatchOutcome { stored: 0, failed });
+        return Ok(BatchOutcome { stored: Vec::new(), failed });
     }
 
     let (ids, bytes): (Vec<i64>, Vec<Vec<u8>>) = inputs.into_iter().unzip();
@@ -883,13 +887,123 @@ fn embed_batch(
         failed: failed + ids.len() as i64,
     })?;
     let results: Vec<(i64, Vec<f32>)> = ids.into_iter().zip(vectors).collect();
-    let stored = io
-        .in_library(library_id, || io.store(&results, model_id))
+    io.in_library(library_id, || io.store(&results, model_id))
         .map_err(BatchError::Abort)?;
     Ok(BatchOutcome {
-        stored: stored as i64,
+        stored: results.into_iter().map(|(file_id, _)| file_id).collect(),
         failed,
     })
+}
+
+// ============================================================================
+// Embeddings for newly indexed photos
+// ============================================================================
+
+/// One indexed file waiting for its embedding.
+struct IndexJob {
+    settings: OmlxEmbeddingSettings,
+    library_id: String,
+    file_id: i64,
+    file_path: String,
+    reply: mpsc::Sender<Result<(), String>>,
+}
+
+struct IndexQueue {
+    jobs: Mutex<VecDeque<IndexJob>>,
+    ready: Condvar,
+}
+
+fn index_queue() -> &'static IndexQueue {
+    static QUEUE: OnceLock<IndexQueue> = OnceLock::new();
+    QUEUE.get_or_init(|| {
+        for _ in 0..REINDEX_CONCURRENCY {
+            std::thread::spawn(index_worker);
+        }
+        IndexQueue {
+            jobs: Mutex::new(VecDeque::new()),
+            ready: Condvar::new(),
+        }
+    })
+}
+
+/// Embed a newly indexed file with the oMLX provider and wait for the
+/// result. Files the indexer processes concurrently share requests, the
+/// same way a re-index does, instead of sending one image per request.
+pub fn embed_indexed_file(
+    settings: &OmlxEmbeddingSettings,
+    library_id: &str,
+    file_id: i64,
+    file_path: &str,
+) -> Result<(), String> {
+    let (reply, result) = mpsc::channel();
+    let queue = index_queue();
+    queue
+        .jobs
+        .lock()
+        .map_err(|e| e.to_string())?
+        .push_back(IndexJob {
+            settings: settings.clone(),
+            library_id: library_id.to_string(),
+            file_id,
+            file_path: file_path.to_string(),
+            reply,
+        });
+    queue.ready.notify_one();
+    result
+        .recv()
+        .map_err(|_| "Embedding worker stopped".to_string())?
+}
+
+/// Next batch: the oldest job plus up to REINDEX_BATCH_SIZE - 1 more for the
+/// same library and settings; other jobs keep their place in the queue.
+fn take_index_batch(jobs: &mut VecDeque<IndexJob>) -> Vec<IndexJob> {
+    let Some(first) = jobs.pop_front() else { return Vec::new() };
+    let mut batch = vec![first];
+    let mut index = 0;
+    while batch.len() < REINDEX_BATCH_SIZE && index < jobs.len() {
+        let same = jobs[index].library_id == batch[0].library_id
+            && jobs[index].settings == batch[0].settings;
+        if same {
+            batch.extend(jobs.remove(index));
+        } else {
+            index += 1;
+        }
+    }
+    batch
+}
+
+fn index_worker() {
+    let queue = index_queue();
+    loop {
+        let batch = {
+            let Ok(mut jobs) = queue.jobs.lock() else { return };
+            while jobs.is_empty() {
+                jobs = match queue.ready.wait(jobs) {
+                    Ok(jobs) => jobs,
+                    Err(_) => return,
+                };
+            }
+            take_index_batch(&mut jobs)
+        };
+
+        let first = &batch[0];
+        let chunk: Vec<(i64, String)> = batch
+            .iter()
+            .map(|job| (job.file_id, job.file_path.clone()))
+            .collect();
+        let io = ServerBatchIo { settings: &first.settings };
+        let outcome = embed_batch(&io, &chunk, &first.library_id, &first.settings.model_id());
+        for job in &batch {
+            let result = match &outcome {
+                Ok(outcome) if outcome.stored.contains(&job.file_id) => Ok(()),
+                Ok(_) => Err("no thumbnail or decodable image to embed".to_string()),
+                Err(BatchError::Embed { error, .. }) | Err(BatchError::Abort(error)) => {
+                    Err(error.clone())
+                }
+            };
+            let _ = job.reply.send(result);
+        }
+    }
 }
 
 /// oMLX re-index: several workers pull batches from a shared queue and embed
@@ -938,7 +1052,7 @@ fn run_reindex_omlx(
                 match embed_batch(&io, &chunk, library_id, &model_id) {
                     Ok(outcome) => {
                         consecutive_errors.store(0, Ordering::SeqCst);
-                        done.fetch_add(outcome.stored, Ordering::SeqCst);
+                        done.fetch_add(outcome.stored.len() as i64, Ordering::SeqCst);
                         failed.fetch_add(outcome.failed, Ordering::SeqCst);
                     }
                     Err(BatchError::Embed { error, failed: count }) => {
@@ -1129,6 +1243,34 @@ mod tests {
         assert!(store.begin(&key, false).is_some());
     }
 
+    fn job(library_id: &str, model: &str, file_id: i64) -> IndexJob {
+        IndexJob {
+            settings: settings(model, Some(512)),
+            library_id: library_id.into(),
+            file_id,
+            file_path: String::new(),
+            reply: mpsc::channel().0,
+        }
+    }
+
+    #[test]
+    fn index_batches_group_same_library_and_model_in_order() {
+        let mut jobs: VecDeque<IndexJob> = VecDeque::new();
+        jobs.push_back(job("lib-a", "eg2", 1));
+        jobs.push_back(job("lib-b", "eg2", 2));
+        jobs.push_back(job("lib-a", "other", 3));
+        for id in 4..=12 {
+            jobs.push_back(job("lib-a", "eg2", id));
+        }
+
+        let ids = |batch: Vec<IndexJob>| batch.iter().map(|j| j.file_id).collect::<Vec<_>>();
+        assert_eq!(ids(take_index_batch(&mut jobs)), vec![1, 4, 5, 6, 7, 8, 9, 10]);
+        assert_eq!(ids(take_index_batch(&mut jobs)), vec![2]);
+        assert_eq!(ids(take_index_batch(&mut jobs)), vec![3]);
+        assert_eq!(ids(take_index_batch(&mut jobs)), vec![11, 12]);
+        assert!(take_index_batch(&mut jobs).is_empty());
+    }
+
     #[test]
     fn requested_dimensions_need_no_probe() {
         // An unreachable URL proves no request is made.
@@ -1232,7 +1374,7 @@ mod tests {
         let active_after = active_model_id();
         *active_settings_cell().write().unwrap() = None;
 
-        assert_eq!(result, Ok(BatchOutcome { stored: 2, failed: 0 }));
+        assert_eq!(result, Ok(BatchOutcome { stored: vec![1, 2], failed: 0 }));
         assert_eq!(active_after, "omlx:other-model");
         assert_eq!(
             *io.stored.borrow(),
@@ -1248,7 +1390,7 @@ mod tests {
         let mut io = FakeIo::new(|_| {});
         io.unreadable = vec![2];
         let result = embed_batch(&io, &chunk(&[1, 2, 3]), "lib-a", "omlx:eg2");
-        assert_eq!(result, Ok(BatchOutcome { stored: 2, failed: 1 }));
+        assert_eq!(result, Ok(BatchOutcome { stored: vec![1, 3], failed: 1 }));
         let ids: Vec<i64> = io.stored.borrow().iter().map(|(_, id, _)| *id).collect();
         assert_eq!(ids, vec![1, 3]);
     }
