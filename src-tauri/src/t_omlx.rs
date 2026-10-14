@@ -42,7 +42,10 @@ pub const BUILTIN_EMBED_MODEL: &str = "clip-vit-b32";
 /// library: relevant matches 0.70-0.79, related-but-wrong images 0.65-0.73,
 /// absent concepts peaking around 0.67). Searches therefore keep only
 /// results within `margin` of the best match, and a best match below
-/// `floor` means the query has no real hits.
+/// `floor` means the query has no real hits. `baseline` is the mean score
+/// of the calibration probes against the library; text queries that score
+/// lower against everything (long, descriptive prompts) get their floor
+/// lowered by the difference.
 ///
 /// These defaults are hand-tuned for EmbeddingGemma 2; `calibrate` refines
 /// them per model by measuring the text/image similarity band of the actual
@@ -51,6 +54,7 @@ pub const BUILTIN_EMBED_MODEL: &str = "clip-vit-b32";
 pub struct ScoreCalibration {
     pub floor: f32,
     pub margin: f32,
+    pub baseline: f32,
 }
 
 impl Default for ScoreCalibration {
@@ -58,12 +62,14 @@ impl Default for ScoreCalibration {
         Self {
             floor: MIN_CONFIDENT_MATCH,
             margin: RELATIVE_MATCH_MARGIN,
+            baseline: PROBE_BASELINE,
         }
     }
 }
 
 pub const MIN_CONFIDENT_MATCH: f32 = 0.69;
 pub const RELATIVE_MATCH_MARGIN: f32 = 0.04;
+pub const PROBE_BASELINE: f32 = 0.60;
 
 /// Generic probe concepts used to measure the model's score band against
 /// the user's own photos.
@@ -277,7 +283,7 @@ pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<
 
     let floor = (mean + 2.75 * sigma).clamp(0.55, 0.80);
     let margin = (1.5 * sigma).clamp(0.02, 0.10);
-    Some(ScoreCalibration { floor, margin })
+    Some(ScoreCalibration { floor, margin, baseline: mean })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1035,7 +1041,7 @@ mod tests {
     }
 
     fn band(floor: f32) -> Option<ScoreCalibration> {
-        Some(ScoreCalibration { floor, margin: 0.04 })
+        Some(ScoreCalibration { floor, margin: 0.04, baseline: 0.55 })
     }
 
     #[test]

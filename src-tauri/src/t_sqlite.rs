@@ -6927,8 +6927,14 @@ impl AFile {
     /// except when the top results form a coherent cluster (as measured by
     /// `coherence_of`, called only in that case), which indicates a present
     /// but abstract concept and returns the top few results as best guesses.
-    /// The frontend threshold selects strictness (a multiplier on the
-    /// calibrated margin) rather than an absolute cutoff.
+    ///
+    /// Text queries that score lower against the whole library than the
+    /// calibration probes (long, descriptive prompts such as Smart Tags sit
+    /// 0.03-0.08 lower) get their floor lowered by that difference; it is
+    /// never raised, so short queries keep the calibrated floor. The frontend
+    /// threshold selects strictness, which narrows or widens the window
+    /// around the best match and shifts the floor, rather than an absolute
+    /// cutoff.
     ///
     /// `query_file_id` is set for image-to-image searches; the anchor skips
     /// that row so the source file's self-match (1.0) cannot dominate.
@@ -6958,10 +6964,24 @@ impl AFile {
             return scores;
         }
 
-        if best < calibration.floor {
+        let (mean, _) = Self::score_stats(&scores, query_file_id);
+        let (window, floor) = match query_file_id {
+            None => {
+                let offset = (calibration.baseline - mean).max(0.0);
+                let (window_scale, floor_shift) = Self::strictness(threshold);
+                (
+                    calibration.margin * window_scale,
+                    calibration.floor - offset + calibration.margin * floor_shift,
+                )
+            }
+            // Image-to-image search: plain calibrated margin and floor.
+            Some(_) => (calibration.margin, calibration.floor),
+        };
+
+        if best < floor {
             // Just-short best match with a coherent top cluster: present but
             // abstract concept — offer the top results as best guesses.
-            let soft_floor = calibration.floor - calibration.margin * 0.5;
+            let soft_floor = floor - calibration.margin * 0.5;
             if query_file_id.is_none() && best >= soft_floor {
                 scores.sort_by(|a, b| {
                     b.1.partial_cmp(&a.1)
@@ -6976,28 +6996,35 @@ impl AFile {
             return Vec::new();
         }
 
-        let margin = match query_file_id {
-            // Text search: the threshold selects strictness (0.5x .. 1.5x of
-            // the calibrated margin), coupled to the frontend's threshold
-            // values [0.69, 0.67, 0.65, 0.62] for oMLX.
-            None => calibration.margin * Self::strictness_multiplier(threshold),
-            // Image-to-image search: plain calibrated margin.
-            Some(_) => calibration.margin,
-        };
-        let effective = (best - margin).max(calibration.floor);
+        let effective = (best - window).max(floor);
         scores.retain(|(_, score)| *score >= effective);
         scores
     }
 
-    fn strictness_multiplier(threshold: f32) -> f32 {
+    /// Mean and standard deviation of a query's scores, without the source
+    /// file of an image-to-image search.
+    fn score_stats(scores: &[(i64, f32)], skip: Option<i64>) -> (f32, f32) {
+        let values = || scores.iter().filter(|(id, _)| Some(*id) != skip).map(|(_, score)| *score);
+        let count = values().count().max(1) as f32;
+        let mean = values().sum::<f32>() / count;
+        let variance = values().map(|score| (score - mean).powi(2)).sum::<f32>() / count;
+        (mean, variance.sqrt())
+    }
+
+    /// Window around the best match (in calibrated margins) and floor shift
+    /// (in margins) for each strictness level, keyed by the frontend's oMLX
+    /// threshold values [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps
+    /// the levels distinct when the best match sits close to the floor,
+    /// where the window alone would collapse them.
+    fn strictness(threshold: f32) -> (f32, f32) {
         if threshold >= 0.68 {
-            0.5
+            (0.5, 0.5)
         } else if threshold >= 0.66 {
-            0.75
+            (0.75, 0.25)
         } else if threshold >= 0.64 {
-            1.0
+            (1.0, 0.0)
         } else {
-            1.5
+            (1.5, -0.25)
         }
     }
 
@@ -10996,7 +11023,49 @@ mod embedding_search_tests {
     }
 
     fn calibration() -> Option<ScoreCalibration> {
-        Some(ScoreCalibration { floor: 0.60, margin: 0.04 })
+        Some(ScoreCalibration { floor: 0.60, margin: 0.04, baseline: 0.55 })
+    }
+
+    /// Scores for a query: `hits` on top of a library of `noise` rows that
+    /// average `mean`.
+    fn query_scores(hits: &[f32], noise: usize, mean: f32) -> Vec<(i64, f32)> {
+        let mut scores: Vec<(i64, f32)> = hits.iter().enumerate().map(|(i, s)| (i as i64 + 1, *s)).collect();
+        scores.extend((0..noise).map(|i| (1000 + i as i64, mean)));
+        scores
+    }
+
+    fn kept_ids(scores: Vec<(i64, f32)>, threshold: f32) -> Vec<i64> {
+        let mut kept = AFile::filter_search_scores(scores, threshold, None, calibration(), |_| 0.0);
+        kept.sort_by_key(|(id, _)| *id);
+        kept.into_iter().map(|(id, _)| id).collect()
+    }
+
+    #[test]
+    fn long_prompts_get_a_floor_lowered_by_their_baseline_offset() {
+        // Same lift over the library, but the whole query sits 0.06 lower.
+        let short = query_scores(&[0.63, 0.61], 500, 0.55);
+        let long = query_scores(&[0.57, 0.55], 500, 0.49);
+        assert_eq!(kept_ids(short, 0.65), vec![1, 2]);
+        assert_eq!(kept_ids(long, 0.65), vec![1, 2]);
+    }
+
+    #[test]
+    fn short_queries_never_get_a_higher_floor() {
+        // Mean above the baseline: the calibrated floor (0.60) applies as is.
+        let scores = query_scores(&[0.62, 0.605, 0.595], 500, 0.58);
+        assert_eq!(kept_ids(scores, 0.65), vec![1, 2]);
+    }
+
+    #[test]
+    fn strictness_levels_stay_distinct_near_the_floor() {
+        // Best match 0.02 above the floor: the window alone would collapse
+        // every level onto the floor.
+        let hits = [0.62, 0.615, 0.608, 0.601, 0.595];
+        let counts: Vec<usize> = [0.69, 0.67, 0.65, 0.62]
+            .iter()
+            .map(|&threshold| kept_ids(query_scores(&hits, 500, 0.55), threshold).len())
+            .collect();
+        assert_eq!(counts, vec![1, 2, 4, 5]);
     }
 
     #[test]
@@ -11040,9 +11109,11 @@ mod embedding_search_tests {
 
     #[test]
     fn image_search_anchors_on_the_best_match_other_than_itself() {
-        let scores = vec![(7, 1.0), (1, 0.80), (2, 0.78), (3, 0.70)];
-        let kept = AFile::filter_search_scores(scores, 0.75, Some(7), calibration(), |_| unreachable!());
-        assert_eq!(kept, vec![(7, 1.0), (1, 0.80), (2, 0.78)]);
+        let mut scores = vec![(7, 1.0), (1, 0.80), (2, 0.78), (3, 0.70)];
+        scores.extend(query_scores(&[], 500, 0.60));
+        let mut kept = AFile::filter_search_scores(scores, 0.75, Some(7), calibration(), |_| unreachable!());
+        kept.sort_by_key(|(id, _)| *id);
+        assert_eq!(kept, vec![(1, 0.80), (2, 0.78), (7, 1.0)]);
     }
 
     #[test]
