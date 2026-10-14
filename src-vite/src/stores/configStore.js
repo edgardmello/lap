@@ -223,17 +223,21 @@ export const useConfigStore = defineStore('configStore', {
       const group = state.settings.externalApps?.[kind];
       return group?.apps?.find((app) => app.id === group.defaultId) || group?.apps?.[0] || null;
     },
-    // Image search threshold values: [Strict, Focused, Standard, Broad]
-    imageSearchThresholds: () => [0.32, 0.29, 0.26, 0.255],
+    // Image search threshold values: [Strict, Focused, Standard, Broad].
+    // Server models (e.g. EmbeddingGemma) concentrate cosine scores in a much
+    // higher, narrower band than CLIP, so each provider needs its own scale.
+    imageSearchThresholds: (state) => (state.settings.imageSearch?.provider === 'omlx'
+      ? [0.69, 0.67, 0.65, 0.62]
+      : [0.32, 0.29, 0.26, 0.255]),
 
     // Embedding dimensions for Matryoshka-capable models (null keeps full size)
     imageSearchOmlxDimensions: () => [null, 512, 256, 128],
 
     // Fixed threshold for image-to-image "Find related photos" search.
-    similarImageSearchThreshold: () => 0.7,
+    similarImageSearchThreshold: (state) => (state.settings.imageSearch?.provider === 'omlx' ? 0.75 : 0.7),
 
     // Fixed default threshold for Smart Tags.
-    smartTagSearchThreshold: () => 0.25,
+    smartTagSearchThreshold: (state) => (state.settings.imageSearch?.provider === 'omlx' ? 0.62 : 0.25),
 
     // Similar photo grouping thresholds
     // [Very strict, Strict, Moderate, Relaxed]
