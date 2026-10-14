@@ -53,6 +53,12 @@ const COHERENT_CLUSTER_MIN: f32 = 0.75;
 /// How many top results to return as best guesses for coherent just-short
 /// text queries.
 const BEST_GUESS_LIMIT: usize = 8;
+/// Image-to-image matches must stand this many standard deviations above
+/// the source photo's mean similarity to the library. Photos from a series
+/// put their neighbours 4.5-5.6 sigma out; a photo with no real neighbours
+/// peaks around 3.6 sigma, where the plain window returned dozens of
+/// loosely themed images.
+const RELATED_MIN_SIGMAS: f32 = 3.5;
 
 fn subtree_like_pattern(path: &str) -> String {
     let separator = std::path::MAIN_SEPARATOR;
@@ -6964,7 +6970,7 @@ impl AFile {
             return scores;
         }
 
-        let (mean, _) = Self::score_stats(&scores, query_file_id);
+        let (mean, sigma) = Self::score_stats(&scores, query_file_id);
         let (window, floor) = match query_file_id {
             None => {
                 let offset = (calibration.baseline - mean).max(0.0);
@@ -6974,8 +6980,12 @@ impl AFile {
                     calibration.floor - offset + calibration.margin * floor_shift,
                 )
             }
-            // Image-to-image search: plain calibrated margin and floor.
-            Some(_) => (calibration.margin, calibration.floor),
+            // Image-to-image search: plain calibrated margin; the floor also
+            // requires matches to stand out from the source's own band.
+            Some(_) => (
+                calibration.margin,
+                calibration.floor.max(mean + RELATED_MIN_SIGMAS * sigma),
+            ),
         };
 
         if best < floor {
@@ -11114,6 +11124,17 @@ mod embedding_search_tests {
         let mut kept = AFile::filter_search_scores(scores, 0.75, Some(7), calibration(), |_| unreachable!());
         kept.sort_by_key(|(id, _)| *id);
         assert_eq!(kept, vec![(1, 0.80), (2, 0.78), (7, 1.0)]);
+    }
+
+    #[test]
+    fn related_photos_must_stand_out_from_the_source_band() {
+        // A source with no real neighbours: the best match is barely above
+        // a wide band of loosely similar photos.
+        let mut scores = vec![(7, 1.0), (1, 0.80), (2, 0.78), (3, 0.77)];
+        scores.extend((0..500).map(|i| (1000 + i, 0.60 + (i % 50) as f32 * 0.004)));
+        let kept = AFile::filter_search_scores(scores, 0.75, Some(7), calibration(), |_| unreachable!());
+        let ids: Vec<i64> = kept.into_iter().map(|(id, _)| id).collect();
+        assert!(ids.len() < 4, "loose matches must be cut, kept {:?}", ids);
     }
 
     #[test]
