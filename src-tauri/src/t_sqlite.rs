@@ -6635,7 +6635,11 @@ impl AFile {
             scores.push((id, score));
         }
 
-        let mut scores = Self::filter_search_scores(scores, threshold);
+        // The relative match window applies to text queries only: an
+        // image-to-image search anchors the window at 1.0 (the source file
+        // matches itself), which would leave only near-duplicates.
+        let mut scores =
+            Self::filter_search_scores(scores, threshold, !params.search_text.is_empty());
 
         // Sort by score descending
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6665,8 +6669,12 @@ impl AFile {
     /// never gates out concepts that are absent from the library. Instead,
     /// keep only results close to the best match, and treat a weak best
     /// match as "no results".
-    fn filter_search_scores(mut scores: Vec<(i64, f32)>, threshold: f32) -> Vec<(i64, f32)> {
-        if crate::t_omlx::is_active() && !scores.is_empty() {
+    fn filter_search_scores(
+        mut scores: Vec<(i64, f32)>,
+        threshold: f32,
+        relative_window: bool,
+    ) -> Vec<(i64, f32)> {
+        if relative_window && crate::t_omlx::is_active() && !scores.is_empty() {
             let best = scores
                 .iter()
                 .map(|(_, score)| *score)
