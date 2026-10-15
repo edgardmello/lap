@@ -16,6 +16,7 @@ use tauri_plugin_aptabase::EventTracker;
 mod t_ai;
 mod t_ai_png;
 mod t_apple_sidecar;
+mod t_batch_rename;
 mod t_cluster;
 mod t_cmds;
 mod t_common;
@@ -68,7 +69,15 @@ async fn main() {
     };
 
     let run_result = builder
-        .plugin(tauri_plugin_window_state::Builder::default().build()) // macOS: ~/Library/Application Support/{APP_NAME}/window-state.json
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                // Let the frontend show the window after its first themed render.
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
@@ -203,6 +212,7 @@ async fn main() {
             t_drag::cancel_file_drag,
             // library
             t_cmds::get_app_config,
+            t_cmds::get_system_region_locale,
             t_cmds::get_supported_format_extensions,
             t_cmds::get_ffmpeg_backed_image_extensions,
             t_cmds::check_gstreamer_available,
@@ -306,6 +316,8 @@ async fn main() {
             t_cmds::copy_edited_image,
             t_cmds::copy_images,
             t_cmds::rename_file,
+            t_cmds::preview_batch_rename,
+            t_cmds::batch_rename_files,
             t_cmds::move_file,
             t_cmds::move_file_outside_library,
             t_cmds::copy_file,
