@@ -120,7 +120,7 @@ export const useConfigStore = defineStore('configStore', {
 
     libraryChangedVersion: 0,
 
-    // System locale (BCP-47, e.g. "en-GB"), fetched once at startup via plugin-os.
+    // Regional locale (BCP-47, e.g. "en-GB"), fetched once at startup.
     // Used when dateTimeFormat follows the system region.
     systemLocale: '',
 
@@ -419,7 +419,13 @@ export const useConfigStore = defineStore('configStore', {
     },
     setImageSearchProvider(provider) {
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
-      this.settings.imageSearch.provider = provider === 'omlx' ? 'omlx' : 'builtin';
+      const next = provider === 'omlx' ? 'omlx' : 'builtin';
+      // Each provider gets its own validated default strictness on switch:
+      // Focused for oMLX (no wrong results in sampled reviews), Standard for CLIP.
+      if (this.settings.imageSearch.provider !== next) {
+        this.settings.imageSearch.thresholdIndex = next === 'omlx' ? 1 : 2;
+      }
+      this.settings.imageSearch.provider = next;
     },
     setImageSearchOmlxSettings(omlx) {
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };

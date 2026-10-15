@@ -1,9 +1,21 @@
 import { setAlbumAccessibility } from '@/common/availability';
 import { invoke } from '@tauri-apps/api/core';
+import { locale } from '@tauri-apps/plugin-os';
 import { listen } from '@tauri-apps/api/event';
 import { config, libConfig } from '@/common/config';
 import { separator, localeComp, formatTimestamp } from '@/common/utils';
 import { getRawDisplayOptions } from './rawDisplay';
+
+export async function getSystemRegionLocale() {
+  // plugin-os reports language preferences, which can differ from date/time region.
+  try {
+    const region = await invoke('get_system_region_locale');
+    if (region) return region;
+  } catch (error) {
+    console.warn('Could not read system regional locale', error);
+  }
+  return locale();
+}
 
 // library
 
@@ -1120,7 +1132,16 @@ export async function copyImages(filePaths) {
   }
 }
 
-// rename a file
+// Preview and apply a batch rename in the captured library.
+export function previewBatchRename(libraryId, fileIds, options) {
+  return invoke('preview_batch_rename', { libraryId, fileIds, options });
+}
+
+export function batchRenameFiles(libraryId, fileIds, options, expected) {
+  return invoke('batch_rename_files', { libraryId, fileIds, options, expected });
+}
+
+// Rename a single file.
 export async function renameFile(fileId, filePath, newName) {
   try {
     const result = await invoke('rename_file', { fileId, filePath, newName });
@@ -1921,6 +1942,15 @@ export async function getEmbeddingReindexStatus() {
 
 export function listenEmbeddingReindexProgress(callback) {
   return listen('embedding_reindex_progress', callback);
+}
+
+export async function getEmbeddingCoverage() {
+  try {
+    return await invoke('get_embedding_coverage');
+  } catch (error) {
+    console.error('getEmbeddingCoverage error:', error);
+  }
+  return null;
 }
 
 // generate embedding

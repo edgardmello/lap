@@ -433,8 +433,17 @@
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.omlx_coverage') }}</div>
+                </div>
+                <div class="text-sm text-base-content/60 shrink-0">{{ embeddingCoverageText }}</div>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.reindex_embeddings') }}</div>
                   <div class="text-xs text-base-content/30">{{ $t('settings.image_search.reindex_embeddings_hint') }}</div>
+                  <div v-if="reindexRecommended && !reindexRunning" class="text-xs text-warning">
+                    {{ $t('settings.image_search.reindex_recommended') }}
+                  </div>
                   <div v-if="reindexVisible" class="text-xs text-base-content/50">
                     {{ reindexProgressText }}
                   </div>
@@ -799,6 +808,7 @@ import {
   startEmbeddingReindex,
   cancelEmbeddingReindex,
   getEmbeddingReindexStatus,
+  getEmbeddingCoverage,
   listenEmbeddingReindexProgress,
 } from '@/common/api';
 import { formatFileSize, isLinux, isMac, setTheme, SCALE_VALUES } from '@/common/utils';
@@ -849,9 +859,13 @@ const multilingualModelDownloadProgress = ref(0);
 const multilingualModelDownloadedBytes = ref(0);
 const multilingualModelTotalBytes = ref(0);
 const isMultilingualModelAvailable = ref(false);
+const tiandituTokenInput = ref(String(config.settings.tiandituToken || ''));
+const tiandituTokenStatus = ref<'idle' | 'saved' | 'empty'>('idle');
 const isTestingOmlxConnection = ref(false);
 const omlxConnectionMessage = ref('');
 const reindexStatus = ref<any>(null);
+const embeddingCoverage = ref<any>(null);
+const reindexRecommended = ref(false);
 let unlistenImageSearchModelDownloadProgress: (() => void) | null = null;
 let unlistenEmbeddingReindexProgress: (() => void) | null = null;
 
@@ -1375,6 +1389,23 @@ const omlxDimensionOptions = computed(() => {
 const reindexRunning = computed(() => reindexStatus.value?.state === 'running');
 const reindexVisible = computed(() => reindexStatus.value && reindexStatus.value.state !== 'idle');
 
+const embeddingCoverageText = computed(() => {
+  const coverage = embeddingCoverage.value;
+  if (!coverage) return '';
+  const format = (n: number) => Number(n || 0).toLocaleString();
+  return `${format(coverage.indexed)} / ${format(coverage.total)}`;
+});
+
+// Switching provider, model, or dimensions invalidates the stored vectors;
+// surface that instead of silently searching a partial index.
+watch(() => [
+  config.settings.imageSearch?.provider,
+  config.settings.imageSearch?.omlx?.model,
+  config.settings.imageSearch?.omlx?.dimensionsIndex,
+], () => {
+  reindexRecommended.value = true;
+});
+
 const reindexProgressText = computed(() => {
   const status = reindexStatus.value;
   if (!status) return '';
@@ -1446,6 +1477,11 @@ const onCancelEmbeddingReindex = async () => {
 const syncEmbeddingReindexStatus = async () => {
   const status = await getEmbeddingReindexStatus();
   if (status) reindexStatus.value = status;
+};
+
+const syncEmbeddingCoverage = async () => {
+  const coverage = await getEmbeddingCoverage();
+  if (coverage) embeddingCoverage.value = coverage;
 };
 
 const onImageSearchModelChange = async (event: Event) => {
@@ -1556,8 +1592,13 @@ onMounted(async () => {
   });
   unlistenEmbeddingReindexProgress = await listenEmbeddingReindexProgress((event: any) => {
     if (event?.payload) reindexStatus.value = event.payload;
+    if (event?.payload?.state === 'finished') {
+      reindexRecommended.value = false;
+      void syncEmbeddingCoverage();
+    }
   });
   await syncEmbeddingReindexStatus();
+  await syncEmbeddingCoverage();
   await syncImageSearchModelStatus();
   applyWindowScale(Number(config.settings.scale || 1));
   dbStorageDir.value = (await getDbStorageDir()) || '';

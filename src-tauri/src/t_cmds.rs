@@ -39,7 +39,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // Keep their library stable until all reads and writes have completed.
 static FILE_REFRESH_LIBRARY_LOCK: RwLock<()> = RwLock::new(());
 
-fn with_library_context<T>(
+pub(crate) fn with_library_context<T>(
     lock: &RwLock<()>,
     library_id: &str,
     current_library: impl FnOnce() -> Result<String, String>,
@@ -111,6 +111,71 @@ pub struct SupportedFormatExtensions {
 // build info
 include!(concat!(env!("OUT_DIR"), "/build_info.rs"));
 
+// system region
+
+/// Read the region used for dates and times, independently of UI language.
+#[tauri::command]
+pub fn get_system_region_locale() -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Globalization::GetUserDefaultLocaleName;
+
+        // LOCALE_NAME_MAX_LENGTH includes the terminating null character.
+        let mut name = [0u16; 85];
+        // SAFETY: the API receives a writable slice and its exact capacity.
+        let length = unsafe { GetUserDefaultLocaleName(&mut name) };
+        if length == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        String::from_utf16(&name[..length as usize - 1])
+            .map(Some)
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::NSLocale;
+
+        // currentLocale includes the user's region; preferredLanguages does not.
+        let identifier = NSLocale::currentLocale().localeIdentifier().to_string();
+        Ok(normalize_locale_identifier(&identifier))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(time_locale_from_env(|key| std::env::var(key).ok()))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Ok(None)
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+fn normalize_locale_identifier(identifier: &str) -> Option<String> {
+    let identifier = identifier.trim();
+    if identifier.is_empty() {
+        return None;
+    }
+    // POSIX encoding suffixes and legacy locale modifiers are not BCP-47 tags.
+    let base = identifier.split(['.', '@']).next()?;
+    if base == "C" || base == "POSIX" {
+        // Intl has no C locale; use English as its formatting approximation.
+        return Some("en-US".to_string());
+    }
+    if base.is_empty() {
+        return None;
+    }
+    Some(base.replace('_', "-"))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn time_locale_from_env(mut get: impl FnMut(&str) -> Option<String>) -> Option<String> {
+    // LANGUAGE and LC_MESSAGES affect translations, not date/time formatting.
+    ["LC_ALL", "LC_TIME", "LANG"]
+        .into_iter()
+        .find_map(|key| get(key).filter(|value| !value.trim().is_empty()))
+        .and_then(|value| normalize_locale_identifier(&value))
+}
+
 // library
 
 /// get app config (libraries list and current library)
@@ -119,89 +184,13 @@ pub fn get_app_config() -> Result<AppConfig, String> {
     t_config::load_app_config()
 }
 
-fn extension_description(ext: &str) -> &'static str {
-    match ext {
-        "3fr" => "Hasselblad RAW",
-        "3gp" => "3GPP Multimedia",
-        "arw" => "Sony Alpha RAW",
-        "asf" => "Advanced Systems Format",
-        "avi" => "Audio Video Interleave",
-        "avif" => "AV1 Image File Format",
-        "bmp" => "Bitmap Image File",
-        "cr2" => "Canon RAW 2",
-        "cr3" => "Canon RAW 3",
-        "crw" => "Canon RAW",
-        "dcr" => "Kodak RAW",
-        "dds" => "DirectDraw Surface",
-        "dng" => "Digital Negative",
-        "dpx" => "Digital Picture Exchange",
-        "erf" => "Epson RAW",
-        "exr" => "OpenEXR High Dynamic Range Image",
-        "flv" => "Flash Video",
-        "gif" => "Graphics Interchange Format",
-        "hdr" => "Radiance High Dynamic Range Image",
-        "heic" => "High Efficiency Image Container",
-        "heif" => "High Efficiency Image File",
-        "hevc" => "High Efficiency Video Coding",
-        "hif" => "HEIF Image File",
-        "j2c" => "JPEG 2000 Codestream",
-        "j2k" => "JPEG 2000 Codestream",
-        "jp2" => "JPEG 2000 Image",
-        "jpc" => "JPEG 2000 Codestream",
-        "jpeg" => "Joint Photographic Experts Group",
-        "jfif" => "JPEG File Interchange Format",
-        "jpf" => "JPEG 2000 Image",
-        "jpg" => "Joint Photographic Experts Group",
-        "jpx" => "JPEG 2000 Extended Image",
-        "jxl" => "JPEG XL",
-        "kdc" => "Kodak Digital Camera RAW",
-        "m2ts" => "Blu-ray BDAV Video",
-        "m4v" => "MPEG-4 Video",
-        "mdc" => "Minolta RAW",
-        "mef" => "Mamiya RAW",
-        "mkv" => "Matroska Video",
-        "mod" => "Camcorder Video",
-        "mos" => "Leaf RAW",
-        "mov" => "QuickTime Movie",
-        "mp4" => "MPEG-4 Video",
-        "mpeg" => "Moving Picture Experts Group Video",
-        "mpg" => "MPEG Video",
-        "mrw" => "Minolta RAW",
-        "mts" => "AVCHD Video",
-        "nef" => "Nikon Electronic Format",
-        "nrw" => "Nikon RAW",
-        "orf" => "Olympus RAW Format",
-        "pef" => "Pentax Electronic File",
-        "png" => "Portable Network Graphics",
-        "psd" => "Photoshop Document",
-        "qoi" => "Quite OK Image",
-        "raf" => "Fujifilm RAW",
-        "raw" => "Generic Camera RAW",
-        "rgbe" => "Radiance RGBE Image",
-        "rw2" => "Panasonic RAW 2",
-        "rwl" => "Leica RAW",
-        "sr2" => "Sony RAW 2",
-        "srf" => "Sony RAW Format",
-        "srw" => "Samsung RAW",
-        "tga" => "Truevision Targa Image",
-        "tif" => "Tagged Image File",
-        "tiff" => "Tagged Image File Format",
-        "tod" => "JVC HD Camcorder Video",
-        "ts" => "MPEG Transport Stream",
-        "webm" => "WebM Video",
-        "webp" => "Web Picture Format",
-        "wmv" => "Windows Media Video",
-        _ => "File Format",
-    }
-}
-
 fn extension_option(ext: &str) -> ExtensionOption {
     ExtensionOption {
         value: ext.to_string(),
         label: format!(
             "{} ({})",
             ext.to_ascii_uppercase(),
-            extension_description(ext)
+            t_common::extension_description(ext)
         ),
     }
 }
@@ -278,21 +267,6 @@ fn gstreamer_element_missing(exit_code: Option<i32>, stderr: &[u8]) -> bool {
     exit_code.is_some_and(|code| code != 0)
         && String::from_utf8_lossy(stderr).lines().any(|line|
             line.trim() == "No such element or plugin 'autoaudiosink'")
-}
-
-#[cfg(test)]
-mod gstreamer_probe_tests {
-    use super::gstreamer_element_missing;
-
-    #[test]
-    fn only_explicit_missing_element_disables_preview() {
-        let missing = b"No such element or plugin 'autoaudiosink'\n";
-        assert!(gstreamer_element_missing(Some(255), missing));
-        assert!(!gstreamer_element_missing(Some(0), missing));
-        assert!(!gstreamer_element_missing(None, missing));
-        assert!(!gstreamer_element_missing(Some(127), b"error while loading shared libraries"));
-        assert!(!gstreamer_element_missing(Some(1), b"unknown failure"));
-    }
 }
 
 /// set last selected item index
@@ -973,7 +947,7 @@ pub fn open_external_url(url: &str) -> Result<(), String> {
 /// system's default layout. A RAW+JPEG pair supplies its JPEG/HEIC companion.
 #[tauri::command]
 pub async fn set_desktop_wallpaper(
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
     file_path: &str,
     companion_path: Option<String>,
 ) -> Result<(), String> {
@@ -987,7 +961,7 @@ pub async fn set_desktop_wallpaper(
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        app_handle
+        _app_handle
             .run_on_main_thread(move || {
                 use objc2::MainThreadMarker;
                 use objc2::runtime::AnyObject;
@@ -1544,6 +1518,34 @@ pub async fn copy_images(
     file_paths: Vec<String>,
 ) -> Result<usize, String> {
     t_image::copy_files_to_clipboard(&app_handle, file_paths).await
+}
+
+/// Preview names and conflicts without modifying files.
+#[tauri::command]
+pub async fn preview_batch_rename(
+    library_id: String,
+    file_ids: Vec<i64>,
+    options: crate::t_batch_rename::RenameOptions,
+) -> Result<crate::t_batch_rename::RenamePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        with_current_library(&library_id, || crate::t_batch_rename::preview(&file_ids, &options))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn batch_rename_files(
+    library_id: String,
+    file_ids: Vec<i64>,
+    options: crate::t_batch_rename::RenameOptions,
+    expected: Vec<crate::t_batch_rename::RenameItem>,
+) -> Result<crate::t_batch_rename::RenamePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        with_current_library(&library_id, || crate::t_batch_rename::execute(&file_ids, &options, &expected))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// rename a file
@@ -3323,6 +3325,26 @@ pub fn get_embedding_reindex_status(
     state.status()
 }
 
+/// how many photos have embeddings for the active model
+#[tauri::command]
+pub async fn get_embedding_coverage() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let provider = t_omlx::active_settings();
+        let model = t_omlx::embed_model_id(provider.as_ref());
+        // Count only vectors of the size the model produces, so ones stored
+        // under the wrong label show up as missing; with the server down,
+        // fall back to the label alone.
+        let expected_bytes = provider
+            .as_ref()
+            .and_then(|settings| t_omlx::expected_dimensions(settings).ok())
+            .map(|dimensions| dimensions * 4);
+        let (indexed, total) = AFile::embedding_coverage(&model, expected_bytes)?;
+        Ok(serde_json::json!({ "model": model, "indexed": indexed, "total": total }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// generate embedding for a file
 #[tauri::command]
 pub async fn generate_embedding(
@@ -3624,6 +3646,86 @@ pub fn restore_databases(
     selections: Vec<t_storage::RestoreSelection>,
 ) -> Result<t_storage::RestoreResult, String> {
     t_storage::restore_databases(&backup_path, &selections)
+}
+
+#[cfg(test)]
+mod system_locale_tests {
+    use super::*;
+
+    #[test]
+    fn regional_identifiers_are_valid_for_intl() {
+        assert_eq!(normalize_locale_identifier("en_CH"), Some("en-CH".into()));
+        assert_eq!(
+            normalize_locale_identifier("fr_CH.UTF-8"),
+            Some("fr-CH".into())
+        );
+        assert_eq!(
+            normalize_locale_identifier("de_DE@euro"),
+            Some("de-DE".into())
+        );
+        assert_eq!(normalize_locale_identifier("C.UTF-8"), Some("en-US".into()));
+        assert_eq!(normalize_locale_identifier("POSIX"), Some("en-US".into()));
+        assert_eq!(normalize_locale_identifier(""), None);
+    }
+
+    #[test]
+    fn linux_uses_time_category_and_ignores_translation_preferences() {
+        let get = |key: &str| match key {
+            "LANGUAGE" | "LC_MESSAGES" | "LANG" => Some("en_US.UTF-8".into()),
+            "LC_TIME" => Some("fr_CH.UTF-8".into()),
+            _ => None,
+        };
+        assert_eq!(time_locale_from_env(get), Some("fr-CH".into()));
+        assert_eq!(
+            time_locale_from_env(|key| {
+                if key == "LC_ALL" {
+                    Some("de_DE.UTF-8".into())
+                } else {
+                    get(key)
+                }
+            }),
+            Some("de-DE".into())
+        );
+        assert_eq!(
+            time_locale_from_env(|key| {
+                if key == "LC_TIME" || key == "LC_ALL" {
+                    Some(String::new())
+                } else {
+                    get(key)
+                }
+            }),
+            Some("en-US".into())
+        );
+        assert_eq!(time_locale_from_env(|_| None), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_region_matches_current_locale() {
+        let identifier = objc2_foundation::NSLocale::currentLocale()
+            .localeIdentifier()
+            .to_string();
+        assert_eq!(
+            get_system_region_locale().unwrap(),
+            normalize_locale_identifier(&identifier)
+        );
+        assert!(get_system_region_locale().unwrap().is_some());
+    }
+}
+
+#[cfg(test)]
+mod gstreamer_probe_tests {
+    use super::gstreamer_element_missing;
+
+    #[test]
+    fn only_explicit_missing_element_disables_preview() {
+        let missing = b"No such element or plugin 'autoaudiosink'\n";
+        assert!(gstreamer_element_missing(Some(255), missing));
+        assert!(!gstreamer_element_missing(Some(0), missing));
+        assert!(!gstreamer_element_missing(None, missing));
+        assert!(!gstreamer_element_missing(Some(127), b"error while loading shared libraries"));
+        assert!(!gstreamer_element_missing(Some(1), b"unknown failure"));
+    }
 }
 
 #[cfg(test)]
