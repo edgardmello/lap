@@ -7054,25 +7054,33 @@ impl AFile {
             ),
         };
 
-        if best < floor {
-            // Just-short best match with a coherent top cluster: present but
-            // abstract concept — offer the top results as best guesses.
-            let soft_floor = floor - calibration.margin * 0.5;
-            if query_file_id.is_none() && best >= soft_floor {
-                scores.sort_by(|a, b| {
-                    b.1.partial_cmp(&a.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                scores.truncate(BEST_GUESS_LIMIT);
-                let top_ids: Vec<i64> = scores.iter().map(|(id, _)| *id).collect();
-                if coherence_of(&top_ids) >= COHERENT_CLUSTER_MIN {
-                    return scores;
-                }
+        let effective = (best - window).max(floor);
+        let kept = if best >= floor {
+            scores.iter().filter(|(_, score)| *score >= effective).count()
+        } else {
+            0
+        };
+
+        // Text search with a best match near the floor but fewer than
+        // BEST_GUESS_LIMIT results: when the top results form a coherent
+        // cluster (present but abstract concept), offer them as best guesses.
+        // This is checked at every strictness level, not only below the
+        // floor; otherwise a stricter level that falls below the floor could
+        // return these guesses while a looser one cut the same dense band
+        // down to one or two photos.
+        let soft_floor = floor - calibration.margin * 0.5;
+        if query_file_id.is_none() && best >= soft_floor && kept < BEST_GUESS_LIMIT {
+            scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scores.truncate(BEST_GUESS_LIMIT);
+            let top_ids: Vec<i64> = scores.iter().map(|(id, _)| *id).collect();
+            if coherence_of(&top_ids) >= COHERENT_CLUSTER_MIN {
+                return scores;
             }
-            return Vec::new();
         }
 
-        let effective = (best - window).max(floor);
+        if best < floor {
+            return Vec::new();
+        }
         scores.retain(|(_, score)| *score >= effective);
         scores
     }
@@ -11150,6 +11158,23 @@ mod embedding_search_tests {
     }
 
     #[test]
+    fn stricter_levels_never_return_more_than_looser_ones() {
+        // Real case ("menina", "pato"): a dense band right at the floor. The
+        // stricter level falls below its floor and returned 8 best guesses
+        // while Focused cut the same band down to 1-2 photos.
+        let hits: Vec<f32> = (0..12).map(|i| 0.612 - i as f32 * 0.002).collect();
+        let counts: Vec<usize> = [0.69, 0.67, 0.65, 0.62]
+            .iter()
+            .map(|&threshold| {
+                AFile::filter_search_scores(query_scores(&hits, 500, 0.55), threshold, None, calibration(), |_| 0.80)
+                    .len()
+            })
+            .collect();
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]), "counts by strictness: {:?}", counts);
+        assert!(counts[1] >= BEST_GUESS_LIMIT, "coherent band near the floor keeps its best guesses: {:?}", counts);
+    }
+
+    #[test]
     fn strictness_levels_stay_distinct_near_the_floor() {
         // Best match 0.02 above the floor: the window alone would collapse
         // every level onto the floor.
@@ -11172,7 +11197,7 @@ mod embedding_search_tests {
     fn calibrated_filter_keeps_results_near_the_best_match() {
         let scores = vec![(1, 0.66), (2, 0.64), (3, 0.61), (4, 0.55)];
         // Standard strictness (1.0x margin): cut at 0.66 - 0.04 = 0.62.
-        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| unreachable!());
+        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| 0.0);
         assert_eq!(kept, vec![(1, 0.66), (2, 0.64)]);
     }
 
