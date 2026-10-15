@@ -25,9 +25,15 @@ const EMBEDDINGGEMMA_QUERY_PROMPT: &str = "task: search result | query: ";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(8);
 const EMBED_TIMEOUT: Duration = Duration::from_secs(120);
 /// Images embedded per request when re-indexing with the oMLX provider.
-const REINDEX_BATCH_SIZE: usize = 8;
+/// Measured on an M1 Pro, one image per request already keeps the GPU at
+/// ~98%, so larger batches barely add throughput (8 x 4 was ~2% faster
+/// than 2 x 2) while holding ~5 GB of activations and making a text search
+/// wait ~15 s behind them; 2 x 2 keeps searches near 1 s with no memory
+/// pressure, and two workers let one prepare thumbnails while the other
+/// waits on the GPU.
+const REINDEX_BATCH_SIZE: usize = 2;
 /// Concurrent re-index workers hitting the server in parallel.
-const REINDEX_CONCURRENCY: usize = 4;
+const REINDEX_CONCURRENCY: usize = 2;
 /// Abort the re-index after this many consecutive failed batches.
 const MAX_CONSECUTIVE_BATCH_ERRORS: usize = 3;
 /// Page size when collecting the re-index work list.
@@ -1255,19 +1261,22 @@ mod tests {
 
     #[test]
     fn index_batches_group_same_library_and_model_in_order() {
+        let size = REINDEX_BATCH_SIZE as i64;
         let mut jobs: VecDeque<IndexJob> = VecDeque::new();
         jobs.push_back(job("lib-a", "eg2", 1));
         jobs.push_back(job("lib-b", "eg2", 2));
         jobs.push_back(job("lib-a", "other", 3));
-        for id in 4..=12 {
+        // One full batch after job 1, plus a remainder of one.
+        for id in 4..4 + size {
             jobs.push_back(job("lib-a", "eg2", id));
         }
 
         let ids = |batch: Vec<IndexJob>| batch.iter().map(|j| j.file_id).collect::<Vec<_>>();
-        assert_eq!(ids(take_index_batch(&mut jobs)), vec![1, 4, 5, 6, 7, 8, 9, 10]);
+        let first: Vec<i64> = std::iter::once(1).chain(4..4 + size - 1).collect();
+        assert_eq!(ids(take_index_batch(&mut jobs)), first);
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![2]);
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![3]);
-        assert_eq!(ids(take_index_batch(&mut jobs)), vec![11, 12]);
+        assert_eq!(ids(take_index_batch(&mut jobs)), vec![3 + size]);
         assert!(take_index_batch(&mut jobs).is_empty());
     }
 
