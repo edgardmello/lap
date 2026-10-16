@@ -53,6 +53,14 @@ const COHERENT_CLUSTER_MIN: f32 = 0.75;
 /// How many top results to return as best guesses for coherent just-short
 /// text queries.
 const BEST_GUESS_LIMIT: usize = 8;
+/// Below Strict, text searches also keep photos scoring above this fraction
+/// of the query's own range (mean to best), when the best match passes the
+/// Focused floor (RANGE_CUT_FLOOR_SHIFT margins above the calibrated floor).
+/// One set for every level: visual review found 85% of the photos it adds
+/// correct at Focused, while looser fractions at Standard and Broad mostly
+/// added wrong ones (baby animals and dolphins for "bebê").
+const RANGE_CUT_FRACTION: f32 = 0.75;
+const RANGE_CUT_FLOOR_SHIFT: f32 = 0.25;
 /// Image-to-image matches must stand this many standard deviations above
 /// the source photo's mean similarity to the library. Photos from a series
 /// put their neighbours 4.5-5.6 sigma out; a photo with no real neighbours
@@ -4689,6 +4697,33 @@ impl AFile {
         Ok(results)
     }
 
+    /// Name/comment condition for a text search. Queries that start with a
+    /// letter of a script that separates words match only at word starts,
+    /// so "gato" no longer finds "Alligator"; numbers ("1234" in IMG_1234)
+    /// and scripts without word separators (CJK, Thai) keep substring
+    /// matching. LIKE stays as a cheap prefilter.
+    fn file_name_search_condition(query: &str) -> (String, Vec<Box<dyn ToSql>>) {
+        let pattern = format!("%{}%", query);
+        if uses_word_start_search(query) {
+            (
+                "((a.name LIKE ? COLLATE NOCASE AND lap_word_start(a.name, ?)) \
+                  OR (a.comments LIKE ? COLLATE NOCASE AND lap_word_start(a.comments, ?)))"
+                    .to_string(),
+                vec![
+                    Box::new(pattern.clone()),
+                    Box::new(query.to_string()),
+                    Box::new(pattern),
+                    Box::new(query.to_string()),
+                ],
+            )
+        } else {
+            (
+                "(a.name LIKE ? COLLATE NOCASE OR a.comments LIKE ? COLLATE NOCASE)".to_string(),
+                vec![Box::new(pattern.clone()), Box::new(pattern)],
+            )
+        }
+    }
+
     // helper to build search query conditions and params
     // Returns (joins_clause, where_clause, params)
     fn build_search_query_parts(params: &QueryParams) -> (String, String, Vec<Box<dyn ToSql>>) {
@@ -4698,10 +4733,9 @@ impl AFile {
         let mut sql_params: Vec<Box<dyn ToSql>> = Vec::new();
 
         if !params.search_file_name.is_empty() {
-            conditions.push("(a.name LIKE ? COLLATE NOCASE OR a.comments LIKE ? COLLATE NOCASE)".to_string());
-            let pattern = format!("%{}%", params.search_file_name);
-            sql_params.push(Box::new(pattern.clone()));
-            sql_params.push(Box::new(pattern));
+            let (condition, values) = Self::file_name_search_condition(&params.search_file_name);
+            conditions.push(condition);
+            sql_params.extend(values);
         }
 
         if let Some(condition) = Self::build_file_type_condition(params.search_file_type) {
@@ -6444,7 +6478,7 @@ impl AFile {
             // The oMLX provider computes text embeddings over HTTP and must
             // not hold the ONNX engine lock while the request is in flight.
             if let Some(settings) = provider {
-                return Ok(Some(crate::t_omlx::embed_query_text(
+                return Ok(Some(crate::t_omlx::embed_search_text(
                     settings,
                     &params.search_text,
                 )?));
@@ -7008,6 +7042,14 @@ impl AFile {
     /// around the best match and shifts the floor, rather than an absolute
     /// cutoff.
     ///
+    /// Below Strict, a text query that passes its floor also keeps every
+    /// photo scoring above a fraction of its own range (mean to best). The
+    /// model aligns English text with images ~0.02-0.03 better than other
+    /// languages while ranking the same photos in nearly the same order, so
+    /// the window alone made Portuguese or Spanish queries return a fraction
+    /// of the English results ("menina" 2 vs "girl" 114). This can only add
+    /// photos, never remove any.
+    ///
     /// `query_file_id` is set for image-to-image searches; the anchor skips
     /// that row so the source file's self-match (1.0) cannot dominate.
     fn filter_search_scores(
@@ -7037,13 +7079,15 @@ impl AFile {
         }
 
         let (mean, sigma) = Self::score_stats(&scores, query_file_id);
-        let (window, floor) = match query_file_id {
+        let (window, floor, range_cut) = match query_file_id {
             None => {
                 let offset = (calibration.baseline - mean).max(0.0);
-                let (window_scale, floor_shift) = Self::strictness(threshold);
+                let (window_scale, floor_shift, widen) = Self::strictness(threshold);
+                let range_floor = calibration.floor - offset + calibration.margin * RANGE_CUT_FLOOR_SHIFT;
                 (
                     calibration.margin * window_scale,
                     calibration.floor - offset + calibration.margin * floor_shift,
+                    (widen && best >= range_floor).then(|| mean + RANGE_CUT_FRACTION * (best - mean)),
                 )
             }
             // Image-to-image search: plain calibrated margin; the floor also
@@ -7051,28 +7095,38 @@ impl AFile {
             Some(_) => (
                 calibration.margin,
                 calibration.floor.max(mean + RELATED_MIN_SIGMAS * sigma),
+                None,
             ),
         };
 
-        if best < floor {
-            // Just-short best match with a coherent top cluster: present but
-            // abstract concept — offer the top results as best guesses.
-            let soft_floor = floor - calibration.margin * 0.5;
-            if query_file_id.is_none() && best >= soft_floor {
-                scores.sort_by(|a, b| {
-                    b.1.partial_cmp(&a.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                scores.truncate(BEST_GUESS_LIMIT);
-                let top_ids: Vec<i64> = scores.iter().map(|(id, _)| *id).collect();
-                if coherence_of(&top_ids) >= COHERENT_CLUSTER_MIN {
-                    return scores;
-                }
+        let window_cut = (best - window).max(floor);
+        let effective = range_cut.map_or(window_cut, |range_cut| window_cut.min(range_cut));
+        let kept = if best >= floor {
+            scores.iter().filter(|(_, score)| *score >= effective).count()
+        } else {
+            0
+        };
+
+        // Text search with a best match near the floor but fewer than
+        // BEST_GUESS_LIMIT results: when the top results form a coherent
+        // cluster (present but abstract concept), offer them as best guesses.
+        // This is checked at every strictness level, not only below the
+        // floor; otherwise a stricter level that falls below the floor could
+        // return these guesses while a looser one cut the same dense band
+        // down to one or two photos.
+        let soft_floor = floor - calibration.margin * 0.5;
+        if query_file_id.is_none() && best >= soft_floor && kept < BEST_GUESS_LIMIT {
+            scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scores.truncate(BEST_GUESS_LIMIT);
+            let top_ids: Vec<i64> = scores.iter().map(|(id, _)| *id).collect();
+            if coherence_of(&top_ids) >= COHERENT_CLUSTER_MIN {
+                return scores;
             }
-            return Vec::new();
         }
 
-        let effective = (best - window).max(floor);
+        if best < floor {
+            return Vec::new();
+        }
         scores.retain(|(_, score)| *score >= effective);
         scores
     }
@@ -7087,20 +7141,21 @@ impl AFile {
         (mean, variance.sqrt())
     }
 
-    /// Window around the best match (in calibrated margins) and floor shift
-    /// (in margins) for each strictness level, keyed by the frontend's oMLX
-    /// threshold values [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps
-    /// the levels distinct when the best match sits close to the floor,
-    /// where the window alone would collapse them.
-    fn strictness(threshold: f32) -> (f32, f32) {
+    /// Window around the best match (in calibrated margins), floor shift
+    /// (in margins) and whether the range cut applies, for each strictness
+    /// level, keyed by the frontend's oMLX threshold values
+    /// [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps the levels
+    /// distinct when the best match sits close to the floor, where the
+    /// window alone would collapse them. Strict keeps only the window.
+    fn strictness(threshold: f32) -> (f32, f32, bool) {
         if threshold >= 0.68 {
-            (0.5, 0.5)
+            (0.5, 0.5, false)
         } else if threshold >= 0.66 {
-            (0.75, 0.25)
+            (0.75, RANGE_CUT_FLOOR_SHIFT, true)
         } else if threshold >= 0.64 {
-            (1.0, 0.0)
+            (1.0, 0.0, true)
         } else {
-            (1.5, -0.25)
+            (1.5, -0.25, true)
         }
     }
 
@@ -10050,7 +10105,53 @@ impl DerefMut for PooledConn {
     }
 }
 
+/// Whether a text search should match only at the start of words: the
+/// query starts with a Latin, Greek or Cyrillic letter. Other scripts
+/// (CJK, Thai, ...) do not separate words, and numbers are often searched
+/// inside names, so those keep substring matching.
+fn uses_word_start_search(query: &str) -> bool {
+    query.chars().next().is_some_and(|c| {
+        c.is_alphabetic()
+            && matches!(c as u32, 0x0041..=0x024F | 0x0370..=0x04FF | 0x1E00..=0x1EFF)
+    })
+}
+
+/// Case-insensitive match of `query` at the beginning of `text` or right
+/// after a character that is not a letter or digit.
+fn word_start_match(text: &str, query: &str) -> bool {
+    let text = text.to_lowercase();
+    let query = query.to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(&query) {
+        let at = from + offset;
+        if text[..at].chars().next_back().is_none_or(|c| !c.is_alphanumeric()) {
+            return true;
+        }
+        from = at + text[at..].chars().next().map_or(1, char::len_utf8);
+    }
+    false
+}
+
+fn register_sql_functions(conn: &Connection) -> Result<(), String> {
+    conn.create_scalar_function(
+        "lap_word_start",
+        2,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8
+            | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let text: Option<String> = ctx.get(0)?;
+            let query: String = ctx.get(1)?;
+            Ok(text.is_some_and(|text| word_start_match(&text, &query)))
+        },
+    )
+    .map_err(|e| format!("Failed to register SQL functions: {}", e))
+}
+
 fn setup_conn(conn: &Connection) -> Result<(), String> {
+    register_sql_functions(conn)?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e| format!("Failed to set SQLite busy timeout: {}", e))?;
     conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
@@ -11150,6 +11251,23 @@ mod embedding_search_tests {
     }
 
     #[test]
+    fn stricter_levels_never_return_more_than_looser_ones() {
+        // Real case ("menina", "pato"): a dense band right at the floor. The
+        // stricter level falls below its floor and returned 8 best guesses
+        // while Focused cut the same band down to 1-2 photos.
+        let hits: Vec<f32> = (0..12).map(|i| 0.612 - i as f32 * 0.002).collect();
+        let counts: Vec<usize> = [0.69, 0.67, 0.65, 0.62]
+            .iter()
+            .map(|&threshold| {
+                AFile::filter_search_scores(query_scores(&hits, 500, 0.55), threshold, None, calibration(), |_| 0.80)
+                    .len()
+            })
+            .collect();
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]), "counts by strictness: {:?}", counts);
+        assert!(counts[1] >= BEST_GUESS_LIMIT, "coherent band near the floor keeps its best guesses: {:?}", counts);
+    }
+
+    #[test]
     fn strictness_levels_stay_distinct_near_the_floor() {
         // Best match 0.02 above the floor: the window alone would collapse
         // every level onto the floor.
@@ -11158,7 +11276,42 @@ mod embedding_search_tests {
             .iter()
             .map(|&threshold| kept_ids(query_scores(&hits, 500, 0.55), threshold).len())
             .collect();
-        assert_eq!(counts, vec![1, 2, 4, 5]);
+        assert_eq!(counts, vec![1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn range_cut_only_adds_to_the_window_results() {
+        // Portuguese-like query: same ranking as English but compressed
+        // scores, so the window around the best match keeps very little.
+        let hits: Vec<f32> = (0..30).map(|i| 0.615 - i as f32 * 0.003).collect();
+        let scores = query_scores(&hits, 500, 0.55);
+        let cal = calibration().unwrap();
+        let best = 0.615;
+        // Focused without the range cut: window 0.75 margins, floor +0.25.
+        let window_only: Vec<i64> = scores
+            .iter()
+            .filter(|(_, s)| *s >= (best - cal.margin * 0.75).max(cal.floor + cal.margin * 0.25))
+            .map(|(id, _)| *id)
+            .collect();
+        let kept = kept_ids(scores, 0.67);
+        assert!(window_only.iter().all(|id| kept.contains(id)), "range cut must never remove photos");
+        assert!(kept.len() > window_only.len(), "compressed query gains results: {} vs {}", kept.len(), window_only.len());
+    }
+
+    #[test]
+    fn range_cut_needs_the_query_to_pass_the_focused_floor() {
+        // "bebê"-like query: best match below the Focused floor and no
+        // coherent cluster, so no level adds anything from its range;
+        // looser levels keep exactly their window results.
+        let hits: Vec<f32> = (0..20).map(|i| 0.605 - i as f32 * 0.002).collect();
+        let scores = query_scores(&hits, 500, 0.55);
+        assert!(kept_ids(scores.clone(), 0.67).is_empty());
+        let cal = calibration().unwrap();
+        for (threshold, window, shift) in [(0.65, 1.0, 0.0), (0.62, 1.5, -0.25)] {
+            let cut = (0.605 - cal.margin * window).max(cal.floor + cal.margin * shift);
+            let window_only = scores.iter().filter(|(_, s)| *s >= cut).count();
+            assert_eq!(kept_ids(scores.clone(), threshold).len(), window_only, "level {threshold}");
+        }
     }
 
     #[test]
@@ -11172,7 +11325,7 @@ mod embedding_search_tests {
     fn calibrated_filter_keeps_results_near_the_best_match() {
         let scores = vec![(1, 0.66), (2, 0.64), (3, 0.61), (4, 0.55)];
         // Standard strictness (1.0x margin): cut at 0.66 - 0.04 = 0.62.
-        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| unreachable!());
+        let kept = AFile::filter_search_scores(scores, 0.65, None, calibration(), |_| 0.0);
         assert_eq!(kept, vec![(1, 0.66), (2, 0.64)]);
     }
 
@@ -11267,5 +11420,66 @@ mod batch_rename_tests {
             assert!(AFile::batch_rename_names_with_conn(&mut conn, &updates).is_err());
             assert_eq!(names(&conn), before);
         }
+    }
+}
+
+#[cfg(test)]
+mod file_name_search_tests {
+    use super::*;
+
+    #[test]
+    fn word_start_match_ignores_matches_inside_words() {
+        assert!(!word_start_match("Alligator - River (cartoon).jpg", "gato"));
+        assert!(!word_start_match("fotogato.png", "gato"));
+        assert!(word_start_match("gato preto.jpg", "gato"));
+        assert!(word_start_match("Meu Gato.jpg", "gato"));
+        assert!(word_start_match("Gatos no sofá.heic", "gato"));
+        assert!(word_start_match("IMG_gato.jpg", "gato"));
+        assert!(word_start_match("Gator - Swamp.jpeg", "gato"));
+        assert!(word_start_match("Água de coco.jpg", "água"));
+        assert!(word_start_match("a gator and a gato", "gato"));
+    }
+
+    #[test]
+    fn word_start_search_only_for_scripts_with_word_separators() {
+        assert!(uses_word_start_search("gato"));
+        assert!(uses_word_start_search("Écureuil"));
+        assert!(uses_word_start_search("кот"));
+        assert!(!uses_word_start_search("1234"));
+        assert!(!uses_word_start_search("猫"));
+        assert!(!uses_word_start_search("ねこ"));
+        assert!(!uses_word_start_search("แมว"));
+        assert!(!uses_word_start_search("_draft"));
+    }
+
+    fn names_matching(query: &str) -> Vec<String> {
+        let conn = Connection::open_in_memory().unwrap();
+        register_sql_functions(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE afiles(id INTEGER PRIMARY KEY, name TEXT, comments TEXT);
+             INSERT INTO afiles(name, comments) VALUES
+                ('Alligator - River (cartoon).jpg', NULL),
+                ('Gato no sofá.jpg', NULL),
+                ('IMG_1234.jpg', 'nosso gato'),
+                ('IMG_5678.jpg', 'alligator no rio'),
+                ('猫の写真.jpg', NULL);",
+        )
+        .unwrap();
+        let (condition, values) = AFile::file_name_search_condition(query);
+        let mut stmt = conn
+            .prepare(&format!("SELECT name FROM afiles a WHERE {} ORDER BY id", condition))
+            .unwrap();
+        stmt.query_map(params_from_iter(values.iter()), |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn file_name_search_matches_names_and_comments_at_word_starts() {
+        assert_eq!(names_matching("gato"), vec!["Gato no sofá.jpg", "IMG_1234.jpg"]);
+        assert_eq!(names_matching("234"), vec!["IMG_1234.jpg"]);
+        assert_eq!(names_matching("猫"), vec!["猫の写真.jpg"]);
+        assert_eq!(names_matching("alli"), vec!["Alligator - River (cartoon).jpg", "IMG_5678.jpg"]);
     }
 }
