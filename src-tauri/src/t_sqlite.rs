@@ -6478,7 +6478,7 @@ impl AFile {
             // The oMLX provider computes text embeddings over HTTP and must
             // not hold the ONNX engine lock while the request is in flight.
             if let Some(settings) = provider {
-                return Ok(Some(crate::t_omlx::embed_query_text(
+                return Ok(Some(crate::t_omlx::embed_search_text(
                     settings,
                     &params.search_text,
                 )?));

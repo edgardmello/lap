@@ -629,6 +629,84 @@ pub fn embed_query_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<
         .ok_or_else(|| "oMLX returned no embedding for the query".to_string())
 }
 
+/// Chat model that translates search text to English before it is embedded.
+/// EmbeddingGemma scores English queries higher against photos, so "trash"
+/// clears the floor where "lixo" does not.
+const QUERY_TRANSLATION_MODEL: &str = "Qwen2.5-VL-3B-Instruct-4bit";
+const QUERY_TRANSLATION_TIMEOUT: Duration = Duration::from_secs(30);
+const QUERY_TRANSLATION_PROMPT: &str = "Translate the user's photo search into short, natural English. \
+Reply with the English search terms only, no quotes or explanation. \
+If it is already English, repeat it unchanged.";
+const QUERY_TRANSLATION_MAX_CHARS: usize = 200;
+const QUERY_TRANSLATION_CACHE_LIMIT: usize = 256;
+
+/// Embed a user search: translate it to English, then embed the translation.
+/// Falls back to the original text when the translation is unavailable.
+pub fn embed_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<Vec<f32>, String> {
+    let english = translate_search_text(settings, text);
+    embed_query_text(settings, &english)
+}
+
+fn translate_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> String {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = text.trim().to_lowercase();
+    if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return hit;
+    }
+    match request_translation(settings, text.trim()) {
+        Some(english) => {
+            if let Ok(mut cache) = cache.lock() {
+                if cache.len() >= QUERY_TRANSLATION_CACHE_LIMIT {
+                    cache.clear();
+                }
+                cache.insert(key, english.clone());
+            }
+            english
+        }
+        None => {
+            eprintln!("Search translation unavailable, embedding the original text: {}", text);
+            text.to_string()
+        }
+    }
+}
+
+fn request_translation(settings: &OmlxEmbeddingSettings, text: &str) -> Option<String> {
+    if text.is_empty() || text.chars().count() > QUERY_TRANSLATION_MAX_CHARS {
+        return None;
+    }
+    let client = http_client(QUERY_TRANSLATION_TIMEOUT).ok()?;
+    let body = json!({
+        "model": QUERY_TRANSLATION_MODEL,
+        "temperature": 0,
+        "max_tokens": 24,
+        "messages": [
+            { "role": "system", "content": QUERY_TRANSLATION_PROMPT },
+            { "role": "user", "content": text },
+        ],
+    });
+    let mut request = client
+        .post(format!("{}/v1/chat/completions", settings.url))
+        .json(&body);
+    if !settings.api_key.is_empty() {
+        request = request.bearer_auth(&settings.api_key);
+    }
+    let response: serde_json::Value = request
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .ok()?;
+    let english = response["choices"][0]["message"]["content"]
+        .as_str()?
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'')
+        .trim();
+    (!english.is_empty() && english.chars().count() <= QUERY_TRANSLATION_MAX_CHARS)
+        .then(|| english.to_string())
+}
+
 fn image_mime(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         "image/jpeg"
