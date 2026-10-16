@@ -411,6 +411,19 @@
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.omlx_translation_model') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_translation_model_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="text"
+                  placeholder="Qwen3.5-2B-MLX-4bit"
+                  v-model="config.settings.imageSearch.omlx.translationModel"
+                  @change="applyEmbeddingProvider"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.omlx_dimensions') }}</div>
                   <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_dimensions_hint') }}</div>
                 </div>

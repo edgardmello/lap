@@ -17,6 +17,7 @@ use tauri::{Emitter, Manager};
 
 const DEFAULT_URL: &str = "http://127.0.0.1:8000";
 pub const DEFAULT_MODEL: &str = "mlx-community/embeddinggemma-2-bf16";
+pub const DEFAULT_TRANSLATION_MODEL: &str = "Qwen3.5-2B-MLX-4bit";
 
 /// EmbeddingGemma task prompt for retrieval queries, from the model's
 /// sentence-transformers prompt configuration.
@@ -307,10 +308,19 @@ pub struct OmlxEmbeddingSettings {
     /// Optional Matryoshka truncation (512 / 256 / 128 for EmbeddingGemma 2).
     #[serde(default)]
     pub dimensions: Option<u32>,
+    /// Chat model that translates search text to English before it is
+    /// embedded. Empty turns the translation off. It does not affect the
+    /// stored vectors, so changing it never requires a re-index.
+    #[serde(default = "default_translation_model")]
+    pub translation_model: String,
 }
 
 fn default_url() -> String {
     DEFAULT_URL.to_string()
+}
+
+fn default_translation_model() -> String {
+    DEFAULT_TRANSLATION_MODEL.to_string()
 }
 
 fn default_model() -> String {
@@ -323,6 +333,7 @@ impl OmlxEmbeddingSettings {
         settings.url = settings.url.trim().trim_end_matches('/').to_string();
         settings.model = settings.model.trim().to_string();
         settings.api_key = settings.api_key.trim().to_string();
+        settings.translation_model = settings.translation_model.trim().to_string();
         if !settings.url.starts_with("http://") && !settings.url.starts_with("https://") {
             return Err("The oMLX server URL must start with http:// or https://".to_string());
         }
@@ -629,33 +640,37 @@ pub fn embed_query_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<
         .ok_or_else(|| "oMLX returned no embedding for the query".to_string())
 }
 
-/// Chat model that translates search text to English before it is embedded.
 /// EmbeddingGemma scores English queries higher against photos, so "trash"
-/// clears the floor where "lixo" does not.
-const QUERY_TRANSLATION_MODEL: &str = "Qwen2.5-VL-3B-Instruct-4bit";
+/// clears the floor where "lixo" does not. Searches are translated to English
+/// by the chat model in `translation_model` before they are embedded.
 const QUERY_TRANSLATION_TIMEOUT: Duration = Duration::from_secs(30);
-const QUERY_TRANSLATION_PROMPT: &str = "Translate the user's photo search into short, natural English. \
-Reply with the English search terms only, no quotes or explanation. \
-If it is already English, repeat it unchanged.";
+const QUERY_TRANSLATION_PROMPT: &str = "You are a translator. \
+Translate the user's photo search text to English. \
+The text may be in any language (for example Portuguese, Spanish, French). \
+Output only the English translation, nothing else.";
 const QUERY_TRANSLATION_MAX_CHARS: usize = 200;
 const QUERY_TRANSLATION_CACHE_LIMIT: usize = 256;
 
 /// Embed a user search: translate it to English, then embed the translation.
-/// Falls back to the original text when the translation is unavailable.
+/// Falls back to the original text when the translation is off or unavailable.
 pub fn embed_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<Vec<f32>, String> {
     let english = translate_search_text(settings, text);
     embed_query_text(settings, &english)
 }
 
 fn translate_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> String {
+    if settings.translation_model.is_empty() {
+        return text.to_string();
+    }
     static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = text.trim().to_lowercase();
+    let key = format!("{}\u{1}{}", settings.translation_model, text.trim().to_lowercase());
     if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return hit;
     }
     match request_translation(settings, text.trim()) {
         Some(english) => {
+            let english = match_query_case(text, english);
             if let Ok(mut cache) = cache.lock() {
                 if cache.len() >= QUERY_TRANSLATION_CACHE_LIMIT {
                     cache.clear();
@@ -671,15 +686,27 @@ fn translate_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> String
     }
 }
 
+/// The model capitalizes some words ("Trash") and not others, which nudges
+/// the vector. A query typed in lowercase keeps a lowercase translation so
+/// "lixo" and "trash" land on the same embedding.
+fn match_query_case(query: &str, translated: String) -> String {
+    if query == query.to_lowercase() {
+        translated.to_lowercase()
+    } else {
+        translated
+    }
+}
+
 fn request_translation(settings: &OmlxEmbeddingSettings, text: &str) -> Option<String> {
     if text.is_empty() || text.chars().count() > QUERY_TRANSLATION_MAX_CHARS {
         return None;
     }
     let client = http_client(QUERY_TRANSLATION_TIMEOUT).ok()?;
     let body = json!({
-        "model": QUERY_TRANSLATION_MODEL,
+        "model": settings.translation_model,
         "temperature": 0,
         "max_tokens": 24,
+        "chat_template_kwargs": { "enable_thinking": false },
         "messages": [
             { "role": "system", "content": QUERY_TRANSLATION_PROMPT },
             { "role": "user", "content": text },
@@ -1261,7 +1288,44 @@ mod tests {
             api_key: String::new(),
             model: model.into(),
             dimensions,
+            translation_model: DEFAULT_TRANSLATION_MODEL.into(),
         }
+    }
+
+    #[test]
+    fn translation_model_does_not_change_the_vector_id() {
+        let mut other = settings("embeddinggemma-2-8bit", None);
+        other.translation_model = "another-chat-model".into();
+        assert_eq!(settings("embeddinggemma-2-8bit", None).model_id(), other.model_id());
+    }
+
+    #[test]
+    fn translation_model_is_trimmed_and_may_be_empty() {
+        let mut padded = settings("embeddinggemma-2-8bit", None);
+        padded.translation_model = "  Qwen3.5-2B-MLX-4bit \n".into();
+        assert_eq!(padded.normalized().unwrap().translation_model, "Qwen3.5-2B-MLX-4bit");
+        padded.translation_model = "   ".into();
+        assert_eq!(padded.normalized().unwrap().translation_model, "");
+    }
+
+    #[test]
+    fn lowercase_queries_keep_a_lowercase_translation() {
+        assert_eq!(match_query_case("lixo", "Trash".into()), "trash");
+        assert_eq!(match_query_case("Paris", "Paris".into()), "Paris");
+    }
+
+    #[test]
+    fn empty_translation_model_embeds_the_original_text() {
+        let mut off = settings("embeddinggemma-2-8bit", None);
+        off.translation_model = String::new();
+        assert_eq!(translate_search_text(&off, "lixo"), "lixo");
+    }
+
+    #[test]
+    fn saved_settings_without_a_translation_model_get_the_default() {
+        let parsed: OmlxEmbeddingSettings =
+            serde_json::from_str(r#"{"url":"http://127.0.0.1:8000","model":"embeddinggemma-2-8bit"}"#).unwrap();
+        assert_eq!(parsed.translation_model, DEFAULT_TRANSLATION_MODEL);
     }
 
     fn band(floor: f32) -> Option<ScoreCalibration> {

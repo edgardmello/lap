@@ -200,6 +200,7 @@ export const useConfigStore = defineStore('configStore', {
           apiKey: '',
           model: 'mlx-community/embeddinggemma-2-bf16',
           dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
+          translationModel: 'Qwen3.5-2B-MLX-4bit', // chat model that translates searches to English; empty = off
         },
       },
 
@@ -476,6 +477,7 @@ export const useConfigStore = defineStore('configStore', {
               apiKey: '',
               model: 'mlx-community/embeddinggemma-2-bf16',
               dimensionsIndex: 0,
+              translationModel: 'Qwen3.5-2B-MLX-4bit',
               ...search.omlx,
             };
           }

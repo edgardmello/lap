@@ -36,3 +36,8 @@ test('switching provider applies that provider\'s default strictness', async () 
   config.setImageSearchProvider('builtin');
   assert.equal(config.settings.imageSearch.thresholdIndex, 2, 'built-in CLIP returns to Standard');
 });
+
+test('oMLX searches are translated with Qwen3.5-2B unless the user changes it', async () => {
+  const config = await configStore();
+  assert.equal(config.settings.imageSearch.omlx.translationModel, 'Qwen3.5-2B-MLX-4bit');
+});

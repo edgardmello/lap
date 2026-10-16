@@ -1512,6 +1512,8 @@
       "omlx_api_key_hint": "Only if the server requires authentication",
       "omlx_model": "Embedding model",
       "omlx_model_hint": "Model name as served by oMLX, e.g. embeddinggemma-2 for stronger multilingual search",
+      "omlx_translation_model": "Search translation model",
+      "omlx_translation_model_hint": "Chat model served by oMLX that translates searches to English before matching. Leave empty to turn translation off",
       "omlx_dimensions": "Embedding dimensions",
       "omlx_dimensions_hint": "Smaller sizes save storage with a minor quality loss",
       "omlx_dimensions_options": [

@@ -1891,6 +1891,7 @@ function buildOmlxSettings(omlx) {
     apiKey: omlx?.apiKey || '',
     model: omlx?.model || 'mlx-community/embeddinggemma-2-bf16',
     dimensions,
+    translationModel: omlx?.translationModel ?? 'Qwen3.5-2B-MLX-4bit',
   };
 }
 
