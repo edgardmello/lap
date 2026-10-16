@@ -53,6 +53,14 @@ const COHERENT_CLUSTER_MIN: f32 = 0.75;
 /// How many top results to return as best guesses for coherent just-short
 /// text queries.
 const BEST_GUESS_LIMIT: usize = 8;
+/// Below Strict, text searches also keep photos scoring above this fraction
+/// of the query's own range (mean to best), when the best match passes the
+/// Focused floor (RANGE_CUT_FLOOR_SHIFT margins above the calibrated floor).
+/// One set for every level: visual review found 85% of the photos it adds
+/// correct at Focused, while looser fractions at Standard and Broad mostly
+/// added wrong ones (baby animals and dolphins for "bebê").
+const RANGE_CUT_FRACTION: f32 = 0.75;
+const RANGE_CUT_FLOOR_SHIFT: f32 = 0.25;
 /// Image-to-image matches must stand this many standard deviations above
 /// the source photo's mean similarity to the library. Photos from a series
 /// put their neighbours 4.5-5.6 sigma out; a photo with no real neighbours
@@ -7008,6 +7016,14 @@ impl AFile {
     /// around the best match and shifts the floor, rather than an absolute
     /// cutoff.
     ///
+    /// Below Strict, a text query that passes its floor also keeps every
+    /// photo scoring above a fraction of its own range (mean to best). The
+    /// model aligns English text with images ~0.02-0.03 better than other
+    /// languages while ranking the same photos in nearly the same order, so
+    /// the window alone made Portuguese or Spanish queries return a fraction
+    /// of the English results ("menina" 2 vs "girl" 114). This can only add
+    /// photos, never remove any.
+    ///
     /// `query_file_id` is set for image-to-image searches; the anchor skips
     /// that row so the source file's self-match (1.0) cannot dominate.
     fn filter_search_scores(
@@ -7037,13 +7053,15 @@ impl AFile {
         }
 
         let (mean, sigma) = Self::score_stats(&scores, query_file_id);
-        let (window, floor) = match query_file_id {
+        let (window, floor, range_cut) = match query_file_id {
             None => {
                 let offset = (calibration.baseline - mean).max(0.0);
-                let (window_scale, floor_shift) = Self::strictness(threshold);
+                let (window_scale, floor_shift, widen) = Self::strictness(threshold);
+                let range_floor = calibration.floor - offset + calibration.margin * RANGE_CUT_FLOOR_SHIFT;
                 (
                     calibration.margin * window_scale,
                     calibration.floor - offset + calibration.margin * floor_shift,
+                    (widen && best >= range_floor).then(|| mean + RANGE_CUT_FRACTION * (best - mean)),
                 )
             }
             // Image-to-image search: plain calibrated margin; the floor also
@@ -7051,10 +7069,12 @@ impl AFile {
             Some(_) => (
                 calibration.margin,
                 calibration.floor.max(mean + RELATED_MIN_SIGMAS * sigma),
+                None,
             ),
         };
 
-        let effective = (best - window).max(floor);
+        let window_cut = (best - window).max(floor);
+        let effective = range_cut.map_or(window_cut, |range_cut| window_cut.min(range_cut));
         let kept = if best >= floor {
             scores.iter().filter(|(_, score)| *score >= effective).count()
         } else {
@@ -7095,20 +7115,21 @@ impl AFile {
         (mean, variance.sqrt())
     }
 
-    /// Window around the best match (in calibrated margins) and floor shift
-    /// (in margins) for each strictness level, keyed by the frontend's oMLX
-    /// threshold values [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps
-    /// the levels distinct when the best match sits close to the floor,
-    /// where the window alone would collapse them.
-    fn strictness(threshold: f32) -> (f32, f32) {
+    /// Window around the best match (in calibrated margins), floor shift
+    /// (in margins) and whether the range cut applies, for each strictness
+    /// level, keyed by the frontend's oMLX threshold values
+    /// [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps the levels
+    /// distinct when the best match sits close to the floor, where the
+    /// window alone would collapse them. Strict keeps only the window.
+    fn strictness(threshold: f32) -> (f32, f32, bool) {
         if threshold >= 0.68 {
-            (0.5, 0.5)
+            (0.5, 0.5, false)
         } else if threshold >= 0.66 {
-            (0.75, 0.25)
+            (0.75, RANGE_CUT_FLOOR_SHIFT, true)
         } else if threshold >= 0.64 {
-            (1.0, 0.0)
+            (1.0, 0.0, true)
         } else {
-            (1.5, -0.25)
+            (1.5, -0.25, true)
         }
     }
 
@@ -11183,7 +11204,42 @@ mod embedding_search_tests {
             .iter()
             .map(|&threshold| kept_ids(query_scores(&hits, 500, 0.55), threshold).len())
             .collect();
-        assert_eq!(counts, vec![1, 2, 4, 5]);
+        assert_eq!(counts, vec![1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn range_cut_only_adds_to_the_window_results() {
+        // Portuguese-like query: same ranking as English but compressed
+        // scores, so the window around the best match keeps very little.
+        let hits: Vec<f32> = (0..30).map(|i| 0.615 - i as f32 * 0.003).collect();
+        let scores = query_scores(&hits, 500, 0.55);
+        let cal = calibration().unwrap();
+        let best = 0.615;
+        // Focused without the range cut: window 0.75 margins, floor +0.25.
+        let window_only: Vec<i64> = scores
+            .iter()
+            .filter(|(_, s)| *s >= (best - cal.margin * 0.75).max(cal.floor + cal.margin * 0.25))
+            .map(|(id, _)| *id)
+            .collect();
+        let kept = kept_ids(scores, 0.67);
+        assert!(window_only.iter().all(|id| kept.contains(id)), "range cut must never remove photos");
+        assert!(kept.len() > window_only.len(), "compressed query gains results: {} vs {}", kept.len(), window_only.len());
+    }
+
+    #[test]
+    fn range_cut_needs_the_query_to_pass_the_focused_floor() {
+        // "bebê"-like query: best match below the Focused floor and no
+        // coherent cluster, so no level adds anything from its range;
+        // looser levels keep exactly their window results.
+        let hits: Vec<f32> = (0..20).map(|i| 0.605 - i as f32 * 0.002).collect();
+        let scores = query_scores(&hits, 500, 0.55);
+        assert!(kept_ids(scores.clone(), 0.67).is_empty());
+        let cal = calibration().unwrap();
+        for (threshold, window, shift) in [(0.65, 1.0, 0.0), (0.62, 1.5, -0.25)] {
+            let cut = (0.605 - cal.margin * window).max(cal.floor + cal.margin * shift);
+            let window_only = scores.iter().filter(|(_, s)| *s >= cut).count();
+            assert_eq!(kept_ids(scores.clone(), threshold).len(), window_only, "level {threshold}");
+        }
     }
 
     #[test]
