@@ -3479,7 +3479,12 @@ pub async fn generate_embedding(
     library_id: Option<String>,
 ) -> Result<String, String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
+    let provider = t_omlx::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(settings) = provider {
+            omlx_file_embedding(&settings, file_id, &library_id)?;
+            return Ok("Embedding generated and saved".to_string());
+        }
         crate::t_startup::ensure_ai(&app_handle, None)?;
         with_current_library(&library_id, || {
             AFile::generate_embedding(&app_handle.state::<t_ai::AiState>(), file_id)
@@ -3534,6 +3539,16 @@ fn omlx_query_embedding(
         .file_id
         .filter(|&id| id > 0)
         .ok_or_else(|| "No file_id or search_text provided".to_string())?;
+    omlx_file_embedding(settings, file_id, library_id)
+}
+
+/// oMLX vector for `file_id`: the stored one, or a new one embedded without
+/// holding the library guard and stored only if the library is unchanged.
+fn omlx_file_embedding(
+    settings: &t_omlx::OmlxEmbeddingSettings,
+    file_id: i64,
+    library_id: &str,
+) -> Result<Vec<f32>, String> {
     let model_id = settings.model_id();
     enum Source {
         Stored(Vec<f32>),
