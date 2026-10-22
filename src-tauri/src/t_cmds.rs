@@ -3497,15 +3497,67 @@ pub async fn search_similar_images(
     library_id: Option<String>,
 ) -> Result<Vec<AFile>, String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
+    // One provider snapshot for the query vector, the stored vectors it is
+    // compared with, and the score filter.
+    let provider = t_omlx::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::t_startup::ensure_ai(&app_handle, None)?;
+        let Some(settings) = provider else {
+            crate::t_startup::ensure_ai(&app_handle, None)?;
+            return with_current_library(&library_id, || {
+                AFile::search_similar_images(&app_handle.state::<t_ai::AiState>(), params, &library_id)
+                    .map_err(|e| format!("Error while searching similar images: {}", e))
+            });
+        };
+        let embedding = omlx_query_embedding(&settings, &params, &library_id)?;
         with_current_library(&library_id, || {
-            AFile::search_similar_images(&app_handle.state::<t_ai::AiState>(), params)
+            AFile::search_similar_images_with(&params, Some(&settings), &library_id, &embedding)
                 .map_err(|e| format!("Error while searching similar images: {}", e))
         })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Query vector for an oMLX search. The HTTP request runs without the
+/// library guard so a slow server cannot hold off library switches; the
+/// guard is taken again for each database access, which fails with
+/// "Library changed" if the user switched libraries in the meantime.
+fn omlx_query_embedding(
+    settings: &t_omlx::OmlxEmbeddingSettings,
+    params: &ImageSearchParams,
+    library_id: &str,
+) -> Result<Vec<f32>, String> {
+    if !params.search_text.is_empty() {
+        return t_omlx::embed_query_text(settings, &params.search_text);
+    }
+    let file_id = params
+        .file_id
+        .filter(|&id| id > 0)
+        .ok_or_else(|| "No file_id or search_text provided".to_string())?;
+    let model_id = settings.model_id();
+    enum Source {
+        Stored(Vec<f32>),
+        Embed(Vec<u8>),
+    }
+    let source = with_current_library(library_id, || {
+        if let Ok(embedding) = AFile::get_embedding_for_model(file_id, &model_id) {
+            return Ok(Source::Stored(embedding));
+        }
+        match AFile::embedding_input(file_id, &model_id, library_id)? {
+            Some(bytes) => Ok(Source::Embed(bytes)),
+            // Stored by a concurrent indexer between the two reads.
+            None => AFile::get_embedding_for_model(file_id, &model_id).map(Source::Stored),
+        }
+    })?;
+    let bytes = match source {
+        Source::Stored(embedding) => return Ok(embedding),
+        Source::Embed(bytes) => bytes,
+    };
+    let embedding = t_omlx::embed_single_image(settings, &bytes)?;
+    with_current_library(library_id, || {
+        AFile::store_embeddings(&[(file_id, embedding.clone())], &model_id)
+    })?;
+    Ok(embedding)
 }
 
 #[tauri::command]

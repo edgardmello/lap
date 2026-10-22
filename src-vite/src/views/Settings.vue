@@ -431,37 +431,39 @@
                   {{ $t('settings.image_search.test_connection') }}
                 </button>
               </div>
-              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.omlx_coverage') }}</div>
-                </div>
-                <div class="text-sm text-base-content/60 shrink-0">{{ embeddingCoverageText }}</div>
-              </div>
-              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.reindex_embeddings') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.reindex_embeddings_hint') }}</div>
-                  <div v-if="reindexRecommended && !reindexRunning" class="text-xs text-warning">
-                    {{ $t('settings.image_search.reindex_recommended') }}
-                  </div>
-                  <div v-if="reindexVisible" class="text-xs text-base-content/50">
-                    {{ reindexProgressText }}
-                  </div>
-                  <progress
-                    v-if="reindexRunning"
-                    class="progress progress-primary h-1.5 w-full max-w-64"
-                    :value="reindexStatus?.done || 0"
-                    :max="reindexStatus?.total || 1"
-                  ></progress>
-                </div>
-                <button v-if="!reindexRunning" class="btn btn-outline btn-xs h-6 min-h-0 shrink-0" @click="onStartEmbeddingReindex">
-                  {{ $t('settings.image_search.reindex_start') }}
-                </button>
-                <button v-else class="btn btn-ghost btn-xs h-6 min-h-0 shrink-0 text-base-content/30 hover:text-base-content" @click="onCancelEmbeddingReindex">
-                  {{ $t('msgbox.cancel') }}
-                </button>
-              </div>
             </template>
+            <!-- Each provider replaces the stored vectors, so re-indexing is
+                 available for the built-in provider too (e.g. after switching back). -->
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_search.omlx_coverage') }}</div>
+              </div>
+              <div class="text-sm text-base-content/60 shrink-0">{{ embeddingCoverageText }}</div>
+            </div>
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_search.reindex_embeddings') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.image_search.reindex_embeddings_hint') }}</div>
+                <div v-if="reindexRecommended && !reindexRunning" class="text-xs text-warning">
+                  {{ $t('settings.image_search.reindex_recommended') }}
+                </div>
+                <div v-if="reindexVisible" class="text-xs text-base-content/50">
+                  {{ reindexProgressText }}
+                </div>
+                <progress
+                  v-if="reindexRunning"
+                  class="progress progress-primary h-1.5 w-full max-w-64"
+                  :value="reindexStatus?.done || 0"
+                  :max="reindexStatus?.total || 1"
+                ></progress>
+              </div>
+              <button v-if="!reindexRunning" class="btn btn-outline btn-xs h-6 min-h-0 shrink-0" @click="onStartEmbeddingReindex">
+                {{ $t('settings.image_search.reindex_start') }}
+              </button>
+              <button v-else class="btn btn-ghost btn-xs h-6 min-h-0 shrink-0 text-base-content/30 hover:text-base-content" @click="onCancelEmbeddingReindex">
+                {{ $t('msgbox.cancel') }}
+              </button>
+            </div>
           </div>
 
           <!-- image search -->
@@ -1534,9 +1536,11 @@ const onEmbeddingProviderChange = async (event: Event) => {
     } catch (error) {
       toast.error(error?.message || String(error));
     }
+    void syncEmbeddingCoverage();
     return;
   }
   await applyEmbeddingProvider();
+  void syncEmbeddingCoverage();
   await onTestOmlxConnection();
 };
 

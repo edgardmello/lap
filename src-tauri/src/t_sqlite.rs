@@ -3310,7 +3310,7 @@ impl AFile {
                 c.id AS album_id, c.name AS album_name,
                 (SELECT 1 FROM athumbs t WHERE t.file_id = a.id LIMIT 1) AS has_thumbnail,
                 (SELECT 1 FROM acollections_files cf WHERE cf.file_id = a.id LIMIT 1) AS has_collections,
-                CASE WHEN a.embeds IS NOT NULL THEN 1 ELSE 0 END AS has_embedding,
+                CASE WHEN {} THEN 1 ELSE 0 END AS has_embedding,
                 a.has_faces,
                 a.last_scan_time,
                 a.content_identifier,
@@ -3330,7 +3330,20 @@ impl AFile {
             LEFT JOIN albums c ON b.album_id = c.id
             LEFT JOIN afiles lpv ON a.live_photo_video_id = lpv.id
             LEFT JOIN afolders lpf ON lpv.folder_id = lpf.id",
+            Self::embedding_matches_model_sql("a", &crate::t_omlx::active_model_id()),
             Self::album_joined_filter_predicate("a", "b", "c")
+        )
+    }
+
+    /// SQL predicate: `alias` has a vector produced by `model_id`. Scans use
+    /// it through has_embedding, so after switching providers they embed the
+    /// files whose vectors came from the other one instead of skipping them.
+    fn embedding_matches_model_sql(alias: &str, model_id: &str) -> String {
+        let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
+        format!(
+            "({alias}.embeds IS NOT NULL AND COALESCE({alias}.embed_model, {}) = {})",
+            quote(crate::t_omlx::BUILTIN_EMBED_MODEL),
+            quote(model_id),
         )
     }
 
@@ -6645,31 +6658,23 @@ impl AFile {
         }
     }
 
-    /// get query embedding from search text or similar image id, computed by
-    /// the given provider snapshot (None = built-in engine)
+    /// get query embedding from search text or similar image id with the
+    /// built-in engine. oMLX query vectors are computed by the search command
+    /// outside the library guard (see t_cmds::omlx_query_embedding).
     pub fn get_query_embedding(
         state: &State<t_ai::AiState>,
         params: &ImageSearchParams,
-        provider: Option<&OmlxEmbeddingSettings>,
     ) -> Result<Option<Vec<f32>>, String> {
         if !params.search_text.is_empty() {
-            // The oMLX provider computes text embeddings over HTTP and must
-            // not hold the ONNX engine lock while the request is in flight.
-            if let Some(settings) = provider {
-                return Ok(Some(crate::t_omlx::embed_query_text(
-                    settings,
-                    &params.search_text,
-                )?));
-            }
             let mut engine = state.0.lock().unwrap();
             Ok(Some(engine.encode_text(&params.search_text)?))
         } else if let Some(file_id) = params.file_id.filter(|&id| id > 0) {
-            let model_id = crate::t_omlx::embed_model_id(provider);
-            match Self::get_embedding_for_model(file_id, &model_id) {
+            let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+            match Self::get_embedding_for_model(file_id, model_id) {
                 Ok(emb) => Ok(Some(emb)),
                 Err(_) => {
-                    Self::generate_embedding_with(state, file_id, provider)?;
-                    Ok(Some(Self::get_embedding_for_model(file_id, &model_id)?))
+                    Self::generate_embedding_with(state, file_id, None)?;
+                    Ok(Some(Self::get_embedding_for_model(file_id, model_id)?))
                 }
             }
         } else {
@@ -6997,20 +7002,43 @@ impl AFile {
     pub fn search_similar_images(
         state: &State<t_ai::AiState>,
         params: ImageSearchParams,
+        library_id: &str,
     ) -> Result<Vec<Self>, String> {
-        // One provider snapshot for the query vector, the stored vectors it
-        // is compared with, and the score filter.
-        let provider = crate::t_omlx::active_settings();
-        let model_id = crate::t_omlx::embed_model_id(provider.as_ref());
-
         // 1. Determine Target Embedding
-        let embedding = Self::get_query_embedding(state, &params, provider.as_ref())?
+        let embedding = Self::get_query_embedding(state, &params)?
             .ok_or_else(|| "No file_id or search_text provided".to_string())?;
+        Self::search_similar_images_with(&params, None, library_id, &embedding)
+    }
+
+    /// Bytes to embed for `file_id` when it has no vector for `model_id` yet
+    /// (None when it already has one). Reads the database, so callers hold
+    /// the library guard; the embedding request itself happens without it.
+    pub fn embedding_input(
+        file_id: i64,
+        model_id: &str,
+        library_id: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
+            return Ok(None);
+        };
+        crate::t_omlx::image_input_bytes(file_id, &file_path, library_id).map(Some)
+    }
+
+    /// search similar images for an already computed query vector. `provider`
+    /// is the snapshot that produced it (None = built-in engine), so the
+    /// stored vectors and the score filter match the query.
+    pub fn search_similar_images_with(
+        params: &ImageSearchParams,
+        provider: Option<&OmlxEmbeddingSettings>,
+        library_id: &str,
+        embedding: &[f32],
+    ) -> Result<Vec<Self>, String> {
+        let model_id = crate::t_omlx::embed_model_id(provider);
 
         // 2. Perform Vector Search
         let conn = open_conn()?;
         let sql = Self::embedding_search_sql(params.file_type);
-        let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, &embedding)?;
+        let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, embedding)?;
 
         // 3. Filter. The oMLX provider filters relative to the best match
         // (calibrated per library and model); the built-in CLIP path keeps
@@ -7027,13 +7055,8 @@ impl AFile {
         } else {
             None
         };
-        let calibration = match provider.as_ref() {
-            Some(settings) => Some(crate::t_omlx::calibration_for(
-                settings,
-                &t_config::current_library_id()?,
-            )),
-            None => None,
-        };
+        let calibration =
+            provider.map(|settings| crate::t_omlx::calibration_for(settings, library_id));
         let mut scores =
             Self::filter_search_scores(scores, threshold, query_file_id, calibration, |top_ids| {
                 Self::get_embeddings_by_ids_on(&conn, top_ids)
@@ -11380,6 +11403,24 @@ mod embedding_search_tests {
         };
         assert_eq!(pending(OMLX_MODEL), vec![1, 2, 4], "legacy rows need an oMLX re-index");
         assert_eq!(pending(BUILTIN_EMBED_MODEL), vec![3, 4]);
+    }
+
+    #[test]
+    fn has_embedding_only_counts_vectors_of_the_active_model() {
+        let conn = mixed_library();
+        let with_embedding = |model: &str| -> Vec<i64> {
+            let sql = format!(
+                "SELECT a.id FROM afiles a WHERE {} ORDER BY a.id",
+                AFile::embedding_matches_model_sql("a", model)
+            );
+            let mut stmt = conn.prepare(&sql).unwrap();
+            stmt.query_map([], |row| row.get(0)).unwrap().map(Result::unwrap).collect()
+        };
+        // After switching back to the built-in provider, a scan re-embeds 3.
+        assert_eq!(with_embedding(BUILTIN_EMBED_MODEL), vec![1, 2]);
+        assert_eq!(with_embedding(OMLX_MODEL), vec![3]);
+        // Model names are user input; quotes must not break the query.
+        assert!(with_embedding("omlx:it's").is_empty());
     }
 
     #[test]
