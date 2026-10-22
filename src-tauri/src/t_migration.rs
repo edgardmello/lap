@@ -163,6 +163,12 @@ fn get_migrations() -> Vec<Migration> {
             description: "Cloud-only file state",
             sql: "",
         },
+        // v0.3.x — track the embedding model behind afiles.embeds
+        Migration {
+            version: 20,
+            description: "Add afiles.embed_model column",
+            sql: "",
+        },
     ]
 }
 
@@ -222,6 +228,15 @@ fn migrate_unique_album_files(conn: &Connection) -> Result<(), String> {
 
     tx.commit()
         .map_err(|e| format!("Migration 9 (deduplicate album files) failed committing transaction: {}", e))
+}
+
+fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [table],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
@@ -502,6 +517,13 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
                     }
                 }
                 tx.commit().map_err(|e| e.to_string())?;
+            } else if migration.version == 20 {
+                // Databases created after this column existed already have it;
+                // ones without an afiles table get it from CREATE TABLE later.
+                if table_exists(conn, "afiles")? && !table_has_column(conn, "afiles", "embed_model")? {
+                    conn.execute("ALTER TABLE afiles ADD COLUMN embed_model TEXT", [])
+                        .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
+                }
             } else if !migration.sql.trim().is_empty() {
                 conn.execute_batch(migration.sql)
                     .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
@@ -575,7 +597,7 @@ mod album_filter_migration_tests {
         // Simulate migration completing before the version was persisted.
         conn.execute_batch("PRAGMA user_version=17;").unwrap();
         check_and_migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(),19);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(),20);
     }
 
     #[test]
@@ -589,6 +611,60 @@ mod album_filter_migration_tests {
         // Simulate migration completing before the version was persisted.
         conn.execute_batch("PRAGMA user_version=18;").unwrap();
         check_and_migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(), 19);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(), 20);
+    }
+}
+
+#[cfg(test)]
+mod embed_model_migration_tests {
+    use super::*;
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn embed_model_column_is_added_once_and_keeps_legacy_rows_null() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE albums(id INTEGER PRIMARY KEY);
+             CREATE TABLE afiles(id INTEGER PRIMARY KEY, embeds BLOB,
+                 cloud_only INTEGER NOT NULL DEFAULT 0, metadata_pending INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO afiles(id, embeds) VALUES(1, x'0000803f');
+             PRAGMA user_version = 19;",
+        )
+        .unwrap();
+        check_and_migrate(&conn).unwrap();
+        assert!(table_has_column(&conn, "afiles", "embed_model").unwrap());
+        let model: Option<String> = conn
+            .query_row("SELECT embed_model FROM afiles WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(model, None, "legacy vectors stay NULL, which means built-in CLIP");
+        assert_eq!(user_version(&conn), 20);
+
+        // Restart before the version was persisted: the column already exists.
+        conn.execute_batch("PRAGMA user_version = 19;").unwrap();
+        check_and_migrate(&conn).unwrap();
+        assert_eq!(user_version(&conn), 20);
+    }
+
+    #[test]
+    fn upgrading_from_v18_applies_cloud_state_and_embed_model() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE albums(id INTEGER PRIMARY KEY);
+             CREATE TABLE afiles(id INTEGER PRIMARY KEY, embeds BLOB);
+             INSERT INTO afiles(id, embeds) VALUES(1, x'0000803f');
+             PRAGMA user_version = 18;",
+        )
+        .unwrap();
+        check_and_migrate(&conn).unwrap();
+        let row: (i64, i64, Option<String>) = conn
+            .query_row("SELECT cloud_only, metadata_pending, embed_model FROM afiles", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(row, (0, 0, None));
+        assert_eq!(user_version(&conn), 20);
     }
 }
