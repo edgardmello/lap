@@ -130,7 +130,34 @@ jobs:
       - name: Install pinned Tauri CLI
         run: npm install -g @tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}
 
+      # Forks often have no Apple certificate, or one that cannot be imported;
+      # build an unsigned DMG there instead of failing at code signing.
+      - name: Check macOS signing certificate
+        id: macos-signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          enabled=false
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            cert="$RUNNER_TEMP/signing-check.p12"
+            keychain="$RUNNER_TEMP/signing-check.keychain-db"
+            if echo "$APPLE_CERTIFICATE" | base64 --decode > "$cert" 2>/dev/null \
+              && security create-keychain -p signing-check "$keychain" \
+              && security import "$cert" -P "$APPLE_CERTIFICATE_PASSWORD" -k "$keychain" > /dev/null 2>&1; then
+              enabled=true
+            fi
+            security delete-keychain "$keychain" 2>/dev/null || true
+            rm -f "$cert"
+          fi
+          if [ "$enabled" != true ]; then
+            echo "::warning::Apple signing certificate missing or invalid; building an unsigned DMG."
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
       - name: Build and Sign
+        if: steps.macos-signing.outputs.enabled == 'true'
         uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -146,7 +173,19 @@ jobs:
           tauriScript: tauri
           args: --target ${{ matrix.target }} --verbose --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
+      - name: Build (unsigned)
+        if: steps.macos-signing.outputs.enabled != 'true'
+        uses: tauri-apps/tauri-action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+        with:
+          projectPath: .
+          tauriScript: tauri
+          args: --target ${{ matrix.target }} --verbose --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
       - name: Notarize and Staple
+        if: steps.macos-signing.outputs.enabled == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
