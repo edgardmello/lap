@@ -6699,7 +6699,7 @@ impl AFile {
             match Self::get_embedding_for_model(file_id, model_id) {
                 Ok(emb) => Ok(Some(emb)),
                 Err(_) => {
-                    Self::generate_embedding_with(state, file_id, None)?;
+                    Self::generate_embedding(state, file_id)?;
                     Ok(Some(Self::get_embedding_for_model(file_id, model_id)?))
                 }
             }
@@ -6708,25 +6708,15 @@ impl AFile {
         }
     }
 
-    /// generate embedding for a file with the active provider
+    /// generate embedding for a file with the built-in engine. oMLX vectors
+    /// are produced outside the library guard (t_omlx batches and
+    /// t_cmds::omlx_file_embedding).
     pub fn generate_embedding(
         state: &State<t_ai::AiState>,
         file_id: i64,
     ) -> Result<String, String> {
-        let provider = crate::t_omlx::active_settings();
-        Self::generate_embedding_with(state, file_id, provider.as_ref())
-    }
-
-    /// generate embedding for a file with a provider snapshot (None = built-in
-    /// engine). The vector is stored under that snapshot's model id, even if
-    /// the active provider changes while it is being computed.
-    pub fn generate_embedding_with(
-        state: &State<t_ai::AiState>,
-        file_id: i64,
-        provider: Option<&OmlxEmbeddingSettings>,
-    ) -> Result<String, String> {
-        let model_id = crate::t_omlx::embed_model_id(provider);
-        let Some(file_path) = Self::embedding_target(file_id, &model_id)? else {
+        let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+        let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
             return Ok("Embedding already exists".to_string());
         };
 
@@ -6737,44 +6727,26 @@ impl AFile {
         }
 
         // 4. Generate embedding
-        // The oMLX provider embeds image bytes over HTTP (no engine lock);
-        // the built-in provider keeps the in-process ONNX path.
-        let embedding = if let Some(settings) = provider {
-            let library_id = AThumb::get_current_library_id();
-            let image_bytes = crate::t_omlx::image_input_bytes(file_id, &file_path, &library_id)?;
-            crate::t_omlx::embed_single_image(settings, &image_bytes)?
-        } else {
-            let mut engine = state.0.lock().unwrap();
+        let mut engine = state.0.lock().unwrap();
 
-            let encode_original = |engine: &mut t_ai::AiEngine| {
-                if !t_utils::content_readable(&file_path) {
-                    return Err("Skipped: the original is not local".to_string());
-                }
-                engine.encode_image(&file_path)
-            };
+        let encode_original = |engine: &mut t_ai::AiEngine| {
+            if !t_utils::content_readable(&file_path) {
+                return Err("Skipped: the original is not local".to_string());
+            }
+            engine.encode_image(&file_path)
+        };
 
-            // Optimized: Use thumbnail if available (much faster than loading original)
-            // Fallback to original file if thumbnail is missing or fails to process
-            match thumb {
-                Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
-                    let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
-                    match panic::catch_unwind(AssertUnwindSafe(|| {
-                        engine.encode_image_from_bytes(thumb_bytes)
-                    })) {
-                        Ok(res) => res.or_else(|_| {
-                            // If thumbnail processing fails (e.g. corrupted), try original
-                            match panic::catch_unwind(AssertUnwindSafe(|| {
-                                encode_original(&mut engine)
-                            })) {
-                                Ok(res2) => res2,
-                                Err(_) => Err(format!(
-                                    "Embedding panic while encoding original image: {}",
-                                    file_path
-                                )),
-                            }
-                        }),
-                        // If thumbnail path panics, still try original once.
-                        Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
+        // Optimized: Use thumbnail if available (much faster than loading original)
+        // Fallback to original file if thumbnail is missing or fails to process
+        let embedding = match thumb {
+            Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
+                let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
+                match panic::catch_unwind(AssertUnwindSafe(|| {
+                    engine.encode_image_from_bytes(thumb_bytes)
+                })) {
+                    Ok(res) => res.or_else(|_| {
+                        // If thumbnail processing fails (e.g. corrupted), try original
+                        match panic::catch_unwind(AssertUnwindSafe(|| {
                             encode_original(&mut engine)
                         })) {
                             Ok(res2) => res2,
@@ -6782,21 +6754,31 @@ impl AFile {
                                 "Embedding panic while encoding original image: {}",
                                 file_path
                             )),
-                        },
-                    }
+                        }
+                    }),
+                    // If thumbnail path panics, still try original once.
+                    Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
+                        encode_original(&mut engine)
+                    })) {
+                        Ok(res2) => res2,
+                        Err(_) => Err(format!(
+                            "Embedding panic while encoding original image: {}",
+                            file_path
+                        )),
+                    },
                 }
-                _ => match panic::catch_unwind(AssertUnwindSafe(|| encode_original(&mut engine))) {
-                    Ok(res) => res,
-                    Err(_) => Err(format!(
-                        "Embedding panic while encoding original image: {}",
-                        file_path
-                    )),
-                },
-            }?
-        };
+            }
+            _ => match panic::catch_unwind(AssertUnwindSafe(|| encode_original(&mut engine))) {
+                Ok(res) => res,
+                Err(_) => Err(format!(
+                    "Embedding panic while encoding original image: {}",
+                    file_path
+                )),
+            },
+        }?;
 
         // 5. Save to DB
-        Self::update_embedding(file_id, &embedding, &model_id)
+        Self::update_embedding(file_id, &embedding, model_id)
             .map_err(|e| format!("DB Error: {}", e))?;
 
         Ok("Embedding generated and saved".to_string())
@@ -6811,7 +6793,7 @@ impl AFile {
         file_id: i64,
     ) -> Result<String, String> {
         let Some(settings) = crate::t_omlx::active_settings() else {
-            return Self::generate_embedding_with(state, file_id, None);
+            return Self::generate_embedding(state, file_id);
         };
         let Some(file_path) = Self::embedding_target(file_id, &settings.model_id())? else {
             return Ok("Embedding already exists".to_string());

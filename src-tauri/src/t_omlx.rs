@@ -1189,7 +1189,7 @@ fn run_reindex_builtin(
             return Ok(());
         }
         let result = crate::t_cmds::with_current_library(library_id, || {
-            crate::t_sqlite::AFile::generate_embedding_with(&ai_state, file_id, None)
+            crate::t_sqlite::AFile::generate_embedding(&ai_state, file_id)
         });
         match result {
             Ok(_) => done += 1,
