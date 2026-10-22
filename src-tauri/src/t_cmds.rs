@@ -3528,7 +3528,7 @@ fn omlx_query_embedding(
     library_id: &str,
 ) -> Result<Vec<f32>, String> {
     if !params.search_text.is_empty() {
-        return t_omlx::embed_query_text(settings, &params.search_text);
+        return t_omlx::embed_search_text(settings, &params.search_text);
     }
     let file_id = params
         .file_id

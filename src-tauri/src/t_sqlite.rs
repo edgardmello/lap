@@ -4867,6 +4867,33 @@ impl AFile {
         Ok(results)
     }
 
+    /// Name/comment condition for a text search. Queries that start with a
+    /// letter of a script that separates words match only at word starts,
+    /// so "gato" no longer finds "Alligator"; numbers ("1234" in IMG_1234)
+    /// and scripts without word separators (CJK, Thai) keep substring
+    /// matching. LIKE stays as a cheap prefilter.
+    fn file_name_search_condition(query: &str) -> (String, Vec<Box<dyn ToSql>>) {
+        let pattern = format!("%{}%", query);
+        if uses_word_start_search(query) {
+            (
+                "((a.name LIKE ? COLLATE NOCASE AND lap_word_start(a.name, ?)) \
+                  OR (a.comments LIKE ? COLLATE NOCASE AND lap_word_start(a.comments, ?)))"
+                    .to_string(),
+                vec![
+                    Box::new(pattern.clone()),
+                    Box::new(query.to_string()),
+                    Box::new(pattern),
+                    Box::new(query.to_string()),
+                ],
+            )
+        } else {
+            (
+                "(a.name LIKE ? COLLATE NOCASE OR a.comments LIKE ? COLLATE NOCASE)".to_string(),
+                vec![Box::new(pattern.clone()), Box::new(pattern)],
+            )
+        }
+    }
+
     // helper to build search query conditions and params
     // Returns (joins_clause, where_clause, params)
     fn build_search_query_parts(params: &QueryParams) -> (String, String, Vec<Box<dyn ToSql>>) {
@@ -4876,10 +4903,9 @@ impl AFile {
         let mut sql_params: Vec<Box<dyn ToSql>> = Vec::new();
 
         if !params.search_file_name.is_empty() {
-            conditions.push("(a.name LIKE ? COLLATE NOCASE OR a.comments LIKE ? COLLATE NOCASE)".to_string());
-            let pattern = format!("%{}%", params.search_file_name);
-            sql_params.push(Box::new(pattern.clone()));
-            sql_params.push(Box::new(pattern));
+            let (condition, values) = Self::file_name_search_condition(&params.search_file_name);
+            conditions.push(condition);
+            sql_params.extend(values);
         }
 
         if let Some(condition) = Self::build_file_type_condition(params.search_file_type) {
@@ -10355,7 +10381,53 @@ impl DerefMut for PooledConn {
     }
 }
 
+/// Whether a text search should match only at the start of words: the
+/// query starts with a Latin, Greek or Cyrillic letter. Other scripts
+/// (CJK, Thai, ...) do not separate words, and numbers are often searched
+/// inside names, so those keep substring matching.
+fn uses_word_start_search(query: &str) -> bool {
+    query.chars().next().is_some_and(|c| {
+        c.is_alphabetic()
+            && matches!(c as u32, 0x0041..=0x024F | 0x0370..=0x04FF | 0x1E00..=0x1EFF)
+    })
+}
+
+/// Case-insensitive match of `query` at the beginning of `text` or right
+/// after a character that is not a letter or digit.
+fn word_start_match(text: &str, query: &str) -> bool {
+    let text = text.to_lowercase();
+    let query = query.to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(&query) {
+        let at = from + offset;
+        if text[..at].chars().next_back().is_none_or(|c| !c.is_alphanumeric()) {
+            return true;
+        }
+        from = at + text[at..].chars().next().map_or(1, char::len_utf8);
+    }
+    false
+}
+
+fn register_sql_functions(conn: &Connection) -> Result<(), String> {
+    conn.create_scalar_function(
+        "lap_word_start",
+        2,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8
+            | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let text: Option<String> = ctx.get(0)?;
+            let query: String = ctx.get(1)?;
+            Ok(text.is_some_and(|text| word_start_match(&text, &query)))
+        },
+    )
+    .map_err(|e| format!("Failed to register SQL functions: {}", e))
+}
+
 fn setup_conn(conn: &Connection) -> Result<(), String> {
+    register_sql_functions(conn)?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e| format!("Failed to set SQLite busy timeout: {}", e))?;
     conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
@@ -11816,5 +11888,65 @@ mod cloud_scan_tests {
         assert_eq!(conn.total_changes(), writes, "unchanged folders must not write to the DB");
         fs::remove_dir_all(root).unwrap();
     }
+}
 
+#[cfg(test)]
+mod file_name_search_tests {
+    use super::*;
+
+    #[test]
+    fn word_start_match_ignores_matches_inside_words() {
+        assert!(!word_start_match("Alligator - River (cartoon).jpg", "gato"));
+        assert!(!word_start_match("fotogato.png", "gato"));
+        assert!(word_start_match("gato preto.jpg", "gato"));
+        assert!(word_start_match("Meu Gato.jpg", "gato"));
+        assert!(word_start_match("Gatos no sofá.heic", "gato"));
+        assert!(word_start_match("IMG_gato.jpg", "gato"));
+        assert!(word_start_match("Gator - Swamp.jpeg", "gato"));
+        assert!(word_start_match("Água de coco.jpg", "água"));
+        assert!(word_start_match("a gator and a gato", "gato"));
+    }
+
+    #[test]
+    fn word_start_search_only_for_scripts_with_word_separators() {
+        assert!(uses_word_start_search("gato"));
+        assert!(uses_word_start_search("Écureuil"));
+        assert!(uses_word_start_search("кот"));
+        assert!(!uses_word_start_search("1234"));
+        assert!(!uses_word_start_search("猫"));
+        assert!(!uses_word_start_search("ねこ"));
+        assert!(!uses_word_start_search("แมว"));
+        assert!(!uses_word_start_search("_draft"));
+    }
+
+    fn names_matching(query: &str) -> Vec<String> {
+        let conn = Connection::open_in_memory().unwrap();
+        register_sql_functions(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE afiles(id INTEGER PRIMARY KEY, name TEXT, comments TEXT);
+             INSERT INTO afiles(name, comments) VALUES
+                ('Alligator - River (cartoon).jpg', NULL),
+                ('Gato no sofá.jpg', NULL),
+                ('IMG_1234.jpg', 'nosso gato'),
+                ('IMG_5678.jpg', 'alligator no rio'),
+                ('猫の写真.jpg', NULL);",
+        )
+        .unwrap();
+        let (condition, values) = AFile::file_name_search_condition(query);
+        let mut stmt = conn
+            .prepare(&format!("SELECT name FROM afiles a WHERE {} ORDER BY id", condition))
+            .unwrap();
+        stmt.query_map(params_from_iter(values.iter()), |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn file_name_search_matches_names_and_comments_at_word_starts() {
+        assert_eq!(names_matching("gato"), vec!["Gato no sofá.jpg", "IMG_1234.jpg"]);
+        assert_eq!(names_matching("234"), vec!["IMG_1234.jpg"]);
+        assert_eq!(names_matching("猫"), vec!["猫の写真.jpg"]);
+        assert_eq!(names_matching("alli"), vec!["Alligator - River (cartoon).jpg", "IMG_5678.jpg"]);
+    }
 }
