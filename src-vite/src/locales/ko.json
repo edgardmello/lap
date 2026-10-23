@@ -54,6 +54,12 @@
     "database_corrupted_hint": "다른 라이브러리로 전환해 보세요."
   },
   "album": {
+    "drop": {
+      "add": "폴더를 드래그하여 추가",
+      "separate": "파일과 폴더를 따로 드래그하세요.",
+      "confirm_folder": "폴더 선택: {name}",
+      "folders_only": "폴더를 드래그하세요."
+    },
     "album_list": "앨범",
     "search_folders": "폴더 검색",
     "favorite_folders_only": "즐겨찾는 폴더만",
@@ -150,6 +156,7 @@
       "validation_name": "스마트 앨범 이름을 입력하세요.",
       "validation_rule": "완성된 규칙을 하나 이상 추가하세요.",
       "fields": {
+        "folder_name": "폴더 이름",
         "name": "파일 이름",
         "file_type": "파일 유형",
         "media_subtype": "미디어 하위 유형",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "온라인에서만 사용 가능",
+    "cloud_only_pending": "온라인에서만 사용 가능 — 파일 정보 미완성",
     "original_unavailable": "원본 파일에 접근할 수 없습니다",
     "requires_original": "원본 파일이 필요합니다. 저장 장치를 다시 연결하세요."
   },
@@ -461,7 +470,8 @@
         "크기",
         "픽셀 크기",
         "재생시간",
-        "무작위"
+        "무작위",
+        "추가"
       ],
       "similarity": "유사도",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "정리 가능",
       "groups_title": "중복 그룹",
+      "skipped_cloud_only": "온라인 전용 파일 {count}개를 건너뛰었습니다",
       "actions_title": "작업",
       "compare": "비교",
       "rescan": "다시 스캔",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Finder에서 보기...",
       "reveal_in_file_explorer": "탐색기에서 보기...",
       "refresh_file_info": "파일 정보 새로 고침",
+      "index_cloud_files": "다운로드 및 색인 생성 후 공간 확보",
       "set_album_cover": "앨범 커버로 설정",
       "set_as": "다음으로 설정",
       "set_desktop_wallpaper": "바탕 화면 배경으로 설정",
@@ -1001,7 +1013,10 @@
       "cancelled": "취소됨",
       "complete": "완료",
       "succeeded": "업데이트됨: {count}",
-      "failed": "실패: {count}"
+      "failed": "실패: {count}",
+      "release_requested": "공간 확보 요청: {count}",
+      "kept_local": "이 장치에 유지: {count}",
+      "kept_local_hint": "이 장치에 항상 유지하는 파일 또는 Windows가 Lap의 공간 확보를 허용하지 않은 파일입니다(제어된 폴더 액세스)."
     },
     "image_editor": {
       "title": "편집",
@@ -1577,7 +1592,6 @@
         "zoom_out": "축소",
         "zoom_fit": "실제 크기 / 창 맞춤 전환",
         "cycle_background": "배경 전환",
-        "toggle_slideshow": "슬라이드쇼 재생 / 일시정지",
         "open_new_window": "새 창에서 보기",
         "open_external_app": "외부 앱에서 열기",
         "edit_image": "편집",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "영구 삭제",
         "refresh_file_info": "파일 정보 새로고침",
         "print": "인쇄",
-        "toggle_favorite": "즐겨찾기 전환",
-        "set_clear_rating": "별점 설정 / 지우기",
-        "mark_pick": "선택으로 표시",
-        "mark_rejected": "제외로 표시",
-        "mark_unreviewed": "미선별로 표시",
+        "toggle_favorite": "즐겨찾기 추가 / 해제",
+        "toggle_favorite_and_next": "즐겨찾기 추가 / 해제 → 다음",
+        "set_clear_rating": "별점",
+        "set_clear_rating_and_next": "별점 → 다음",
+        "mark_pick": "선별 · 선택됨",
+        "mark_pick_and_next": "선별 · 선택됨 → 다음",
+        "mark_rejected": "선별 · 제외됨",
+        "mark_rejected_and_next": "선별 · 제외됨 → 다음",
+        "mark_unreviewed": "선별 · 미선별",
+        "mark_unreviewed_and_next": "선별 · 미선별 → 다음",
         "clear_rating": "별점 지우기",
         "rate_one": "별점 1개",
         "rate_two": "별점 2개",
         "rate_three": "별점 3개",
         "rate_four": "별점 4개",
         "rate_five": "별점 5개",
-        "edit_tags": "태그 편집",
-        "edit_collections": "컬렉션 편집",
-        "edit_comment": "메모 편집",
+        "edit_tags": "태그",
+        "edit_collections": "컬렉션",
+        "edit_comment": "메모",
         "rotate": "보기 시계 방향 회전",
         "rotate_counterclockwise": "보기 반시계 방향 회전",
         "thumbnail_increase": "썸네일 확대",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "고급",
-      "section_thumbnail_cache": "썸네일 캐시",
-      "thumbnail_quality": "썸네일 품질",
-      "thumbnail_quality_hint": "생성된 썸네일의 해상도를 설정합니다. 높은 설정일수록 더 선명하지만 생성 시간이 길고 디스크 공간을 더 사용합니다",
-      "section_map": "지도",
-      "map_provider": "지도 서비스",
-      "map_provider_hint": "지도 보기에 사용할 지도 서비스를 선택합니다",
-      "map_provider_options": [
-        "글로벌(기본값)",
-        "중국(톈디투)"
-      ],
-      "tianditu_token": "톈디투 API 토큰",
-      "tianditu_token_hint": "톈디투 타일에 필요합니다",
-      "tianditu_token_placeholder": "토큰 붙여넣기",
-      "tianditu_token_status_saved": "저장됨",
-      "tianditu_token_status_empty": "설정되지 않음",
-      "thumbnail_quality_options": [
-        "낮음 (256 px)",
-        "표준 (512 px)",
-        "높음 (1024 px)"
-      ],
-      "section_external_apps": "외부 앱",
-      "manage_external_apps": "외부 앱 관리",
-      "external_image_editor": "사진을 다음으로 열기",
-      "external_video_app": "동영상 열기 앱",
-      "external_app_not_selected": "선택된 앱이 없습니다",
-      "choose_app": "선택",
-      "clear_app": "지우기",
-      "default_app": "기본값",
-      "set_default_app": "기본값으로 설정",
+      "external_app": {
+        "section_external_apps": "외부 앱",
+        "manage_external_apps": "외부 앱 관리",
+        "external_image_editor": "사진을 다음으로 열기",
+        "external_video_app": "동영상 열기 앱",
+        "external_app_not_selected": "선택된 앱이 없습니다",
+        "choose_app": "선택",
+        "clear_app": "지우기",
+        "default_app": "기본값",
+        "set_default_app": "기본값으로 설정"
+      },
       "section_diagnostics": "진단",
-      "debug_mode": "디버그 모드"
+      "debug_mode": "디버그 모드",
+      "map": {
+        "section_map": "지도",
+        "map_provider": "지도 서비스",
+        "map_provider_hint": "지도 보기에 사용할 지도 서비스를 선택합니다",
+        "map_provider_options": [
+          "글로벌(기본값)",
+          "중국(톈디투)"
+        ],
+        "tianditu_token": "톈디투 API 토큰",
+        "tianditu_token_hint": "톈디투 타일에 필요합니다",
+        "tianditu_token_placeholder": "토큰 붙여넣기",
+        "tianditu_token_status_saved": "저장됨",
+        "tianditu_token_status_empty": "설정되지 않음"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "되돌리는 중…",
+        "cancelled": "취소되었습니다. 기존 캐시가 유지됩니다.",
+        "new_location": "새 위치: {path}",
+        "migrating": "썸네일 이동 중…",
+        "migration_hint": "모든 라이브러리의 썸네일을 이동합니다. 새 위치는 이동이 모두 완료된 후 적용됩니다. 취소하면 현재 캐시 위치가 유지됩니다.",
+        "migration_progress": "이동 진행률",
+        "ready": "이동 준비 완료",
+        "start": "시작",
+        "cancelling": "취소 중…",
+        "rebuild_message": "이전 썸네일 캐시 위치를 사용할 수 없습니다. 이전 파일을 이동하지 않고 계속할까요? 새 위치에서 필요에 따라 썸네일을 다시 생성합니다. 라이브러리 데이터, 원본 사진 및 이전 드라이브의 캐시 파일은 변경되지 않습니다.",
+        "rebuild_confirm": "계속하고 다시 생성",
+        "section_thumbnail_cache": "썸네일 캐시",
+        "thumbnail_quality": "썸네일 해상도 변경",
+        "thumbnail_quality_hint": "높은 설정일수록 더 선명하지만 생성 시간이 길고 디스크 공간을 더 사용합니다",
+        "thumbnail_quality_options": [
+          "낮음 (256 px)",
+          "표준 (512 px)",
+          "높음 (1024 px)"
+        ],
+        "unavailable": "캐시 위치를 사용할 수 없습니다. 사용하거나 이동하기 전에 드라이브를 다시 연결하세요.",
+        "current_location": "캐시 위치 변경",
+        "counting": "캐시 파일 집계 중…",
+        "finishing": "캐시 이동 마무리 중…",
+        "success": "썸네일 캐시 위치가 변경되었습니다",
+        "cleanup_warning": "캐시를 이동했지만 일부 이전 파일을 삭제하지 못했습니다:",
+        "busy": "썸네일 캐시 이동이 완료될 때까지 기다려 주세요."
+      }
     },
     "database": {
       "title": "저장소",

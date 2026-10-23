@@ -54,6 +54,12 @@
     "database_corrupted_hint": "请尝试切换到其他库。"
   },
   "album": {
+    "drop": {
+      "add": "拖入文件夹以添加",
+      "separate": "请分别拖入文件和文件夹。",
+      "confirm_folder": "选择文件夹：{name}",
+      "folders_only": "请拖入文件夹。"
+    },
     "album_list": "相册",
     "search_folders": "搜索文件夹",
     "favorite_folders_only": "仅收藏文件夹",
@@ -150,6 +156,7 @@
       "validation_name": "请输入智能相册名称。",
       "validation_rule": "请至少添加一条完整规则。",
       "fields": {
+        "folder_name": "文件夹名称",
         "name": "文件名",
         "file_type": "文件类型",
         "media_subtype": "媒体子类型",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "仅在线可用",
+    "cloud_only_pending": "仅在线可用 — 文件信息待补全",
     "original_unavailable": "原文件暂时无法访问",
     "requires_original": "需要原文件，请连接存储设备后使用此操作。"
   },
@@ -461,7 +470,8 @@
         "大小",
         "尺寸",
         "时长",
-        "随机"
+        "随机",
+        "添加顺序"
       ],
       "similarity": "相似度",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "可回收",
       "groups_title": "重复组",
+      "skipped_cloud_only": "已跳过 {count} 个仅在线可用的文件",
       "actions_title": "操作",
       "compare": "对比",
       "rescan": "重新扫描",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "在访达中显示...",
       "reveal_in_file_explorer": "在文件资源管理器中显示...",
       "refresh_file_info": "刷新文件信息",
+      "index_cloud_files": "下载、索引并释放空间",
       "set_album_cover": "设置为相册封面",
       "set_as": "设为",
       "set_desktop_wallpaper": "设为桌面壁纸",
@@ -1001,7 +1013,10 @@
       "cancelled": "已取消",
       "complete": "已完成",
       "succeeded": "已更新：{count}",
-      "failed": "失败：{count}"
+      "failed": "失败：{count}",
+      "release_requested": "已请求释放：{count}",
+      "kept_local": "保留在此设备：{count}",
+      "kept_local_hint": "始终保留在此设备上的文件，或 Windows 不允许 Lap 释放空间的文件（受控文件夹访问）。"
     },
     "image_editor": {
       "title": "编辑",
@@ -1577,7 +1592,6 @@
         "zoom_out": "缩小",
         "zoom_fit": "切换实际大小/适应窗口",
         "cycle_background": "切换背景",
-        "toggle_slideshow": "播放/暂停幻灯片",
         "open_new_window": "在新窗口中查看",
         "open_external_app": "在外部应用中打开",
         "edit_image": "编辑",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "永久删除",
         "refresh_file_info": "刷新文件信息",
         "print": "打印",
-        "toggle_favorite": "切换收藏",
-        "set_clear_rating": "设置/清除评分",
-        "mark_pick": "标记为已选",
-        "mark_rejected": "标记为已排除",
-        "mark_unreviewed": "标记为待筛选",
+        "toggle_favorite": "收藏 / 取消收藏",
+        "toggle_favorite_and_next": "收藏 / 取消收藏 → 下一张",
+        "set_clear_rating": "评分",
+        "set_clear_rating_and_next": "评分 → 下一张",
+        "mark_pick": "选片 · 已选",
+        "mark_pick_and_next": "选片 · 已选 → 下一张",
+        "mark_rejected": "选片 · 已排除",
+        "mark_rejected_and_next": "选片 · 已排除 → 下一张",
+        "mark_unreviewed": "选片 · 待筛选",
+        "mark_unreviewed_and_next": "选片 · 待筛选 → 下一张",
         "clear_rating": "清除评分",
         "rate_one": "评分 1 星",
         "rate_two": "评分 2 星",
         "rate_three": "评分 3 星",
         "rate_four": "评分 4 星",
         "rate_five": "评分 5 星",
-        "edit_tags": "编辑标签",
-        "edit_collections": "编辑合集",
-        "edit_comment": "编辑备注",
+        "edit_tags": "标签",
+        "edit_collections": "合集",
+        "edit_comment": "备注",
         "rotate": "旋转视图（顺时针）",
         "rotate_counterclockwise": "旋转视图（逆时针）",
         "thumbnail_increase": "放大缩略图",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "高级",
-      "section_thumbnail_cache": "缩略图缓存",
-      "thumbnail_quality": "缩略图质量",
-      "thumbnail_quality_hint": "控制生成缩略图的分辨率。更高设置更清晰，但生成更慢且占用更多磁盘空间",
-      "section_map": "地图",
-      "map_provider": "地图服务提供者",
-      "map_provider_hint": "选择地图视图使用的地图服务",
-      "map_provider_options": [
-        "全球（默认）",
-        "中国（天地图）"
-      ],
-      "tianditu_token": "天地图 API Token",
-      "tianditu_token_hint": "使用天地图瓦片时需要提供",
-      "tianditu_token_placeholder": "粘贴你的 Token",
-      "tianditu_token_status_saved": "已保存",
-      "tianditu_token_status_empty": "未配置",
-      "thumbnail_quality_options": [
-        "低 (256 px)",
-        "标准 (512 px)",
-        "高 (1024 px)"
-      ],
-      "section_external_apps": "外部应用",
-      "manage_external_apps": "管理外部应用",
-      "external_image_editor": "使用以下应用打开照片",
-      "external_video_app": "使用以下应用打开视频",
-      "external_app_not_selected": "未选择应用",
-      "choose_app": "选择",
-      "clear_app": "清空",
-      "default_app": "默认",
-      "set_default_app": "设为默认",
+      "external_app": {
+        "section_external_apps": "外部应用",
+        "manage_external_apps": "管理外部应用",
+        "external_image_editor": "使用以下应用打开照片",
+        "external_video_app": "使用以下应用打开视频",
+        "external_app_not_selected": "未选择应用",
+        "choose_app": "选择",
+        "clear_app": "清空",
+        "default_app": "默认",
+        "set_default_app": "设为默认"
+      },
       "section_diagnostics": "诊断",
-      "debug_mode": "调试模式"
+      "debug_mode": "调试模式",
+      "map": {
+        "section_map": "地图",
+        "map_provider": "地图服务提供者",
+        "map_provider_hint": "选择地图视图使用的地图服务",
+        "map_provider_options": [
+          "全球（默认）",
+          "中国（天地图）"
+        ],
+        "tianditu_token": "天地图 API Token",
+        "tianditu_token_hint": "使用天地图瓦片时需要提供",
+        "tianditu_token_placeholder": "粘贴你的 Token",
+        "tianditu_token_status_saved": "已保存",
+        "tianditu_token_status_empty": "未配置"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "正在回滚…",
+        "cancelled": "已取消，原缓存已保留。",
+        "new_location": "新位置：{path}",
+        "migrating": "正在迁移缩略图…",
+        "migration_hint": "将迁移所有库的缩略图，全部成功后新位置才生效。取消将保留当前缓存位置。",
+        "migration_progress": "迁移进度",
+        "ready": "准备迁移",
+        "start": "开始",
+        "cancelling": "正在取消…",
+        "rebuild_message": "原缩略图缓存位置不可用。是否继续而不迁移旧文件？缩略图将在新位置按需重新生成，图库数据和原始照片不受影响，原磁盘上的缓存文件也不会被删除。",
+        "rebuild_confirm": "继续并重新生成",
+        "section_thumbnail_cache": "缩略图缓存",
+        "thumbnail_quality": "修改缩略图分辨率",
+        "thumbnail_quality_hint": "分辨率越高，缩略图越清晰，但生成更慢且占用更多磁盘空间",
+        "thumbnail_quality_options": [
+          "低 (256 px)",
+          "标准 (512 px)",
+          "高 (1024 px)"
+        ],
+        "unavailable": "缓存位置不可用，请连接原磁盘后再使用或迁移缓存。",
+        "current_location": "更改缓存位置",
+        "counting": "正在统计缓存文件…",
+        "finishing": "正在完成缓存迁移…",
+        "success": "缩略图缓存位置已更改",
+        "cleanup_warning": "缓存已迁移，但部分旧文件未能删除：",
+        "busy": "请等待缩略图缓存迁移完成。"
+      }
     },
     "database": {
       "title": "存储",

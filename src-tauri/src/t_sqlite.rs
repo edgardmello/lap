@@ -1527,7 +1527,7 @@ impl FolderScanState {
 }
 
 /// Define the album file struct
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AFile {
     pub id: Option<i64>, // unique id (autoincrement by db)
     pub folder_id: i64,  // folder id (from folders table)
@@ -1603,6 +1603,10 @@ pub struct AFile {
     #[serde(default = "default_album_visible")]
     pub album_visible: bool, // output-only: visibility under this album's filters
     pub motion_photo_offset: Option<i64>,   // byte offset of embedded MP4 (Android Motion Photo)
+    #[serde(default)]
+    pub cloud_only: bool, // online-only placeholder when last scanned
+    #[serde(default)]
+    pub metadata_pending: bool, // indexed without reading the content
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2225,8 +2229,42 @@ pub struct LibraryVisibleCounts {
     pub pick: i64, pub reject: i64, pub unreviewed: i64,
 }
 
+/// What a scan may do with a file without downloading it.
+#[derive(Debug, PartialEq)]
+pub(crate) enum CloudScanAction {
+    /// Local file: the regular scan, which reads the content.
+    Read,
+    /// Local file indexed while online-only: read it in full even if unchanged.
+    ReadPending,
+    /// Unknown online-only file: record what the directory entry tells us.
+    InsertStub,
+    /// Unchanged online-only file: only mark it as seen.
+    MarkSeen,
+    /// Changed online-only file: store the new size and dates, keep the rest.
+    UpdateStat,
+}
+
+pub(crate) fn cloud_scan_action(cloud_only: bool, stored: Option<&AFile>, size: i64, modified: Option<i64>) -> CloudScanAction {
+    match (cloud_only, stored) {
+        (false, Some(file)) if file.metadata_pending => CloudScanAction::ReadPending,
+        (false, _) => CloudScanAction::Read,
+        (true, None) => CloudScanAction::InsertStub,
+        (true, Some(file)) if file.size == size && file.modified_at == modified => CloudScanAction::MarkSeen,
+        (true, Some(_)) => CloudScanAction::UpdateStat,
+    }
+}
+
 impl AFile {
-    pub fn get_library_visible_counts() -> Result<LibraryVisibleCounts, String> {
+    pub fn get_library_visible_counts(id: Option<&str>) -> Result<LibraryVisibleCounts, String> {
+        if let Some(id) = id {
+            let _lease = t_storage::DbConnectionLease::acquire()?;
+            let db_path = t_storage::get_library_db_path(id)?;
+            let conn = Connection::open_with_flags(
+                db_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            ).map_err(|e| e.to_string())?;
+            return Self::get_library_visible_counts_on(&conn);
+        }
         let conn = open_conn()?;
         Self::get_library_visible_counts_on(&conn)
     }
@@ -2264,6 +2302,43 @@ impl AFile {
 
     fn new(folder_id: i64, file_path: &str, file_type: i64) -> Result<Self, String> {
         Self::new_with_raw_info(folder_id, file_path, file_type, None)
+    }
+
+    /// Catalog entry for an online-only file, built from its directory entry alone.
+    fn cloud_stub(folder_id: i64, file_path: &str, file_type: i64, last_scan_time: i64) -> Result<Self, String> {
+        let info = t_utils::FileInfo::new(file_path)?;
+        Ok(Self {
+            folder_id,
+            name_pinyin: Some(t_utils::natural_sort_key(&info.file_name.to_lowercase())),
+            name: info.file_name,
+            size: info.file_size,
+            file_type: Some(file_type),
+            created_at: info.created,
+            modified_at: info.modified,
+            inode: Some(info.inode as i64),
+            taken_date: info.modified,
+            rating: Some(0),
+            culling_flag: Some(0),
+            has_tags: Some(false),
+            has_faces: Some(0),
+            last_scan_time: Some(last_scan_time),
+            cloud_only: true,
+            metadata_pending: true,
+            album_accessible: true,
+            album_visible: true,
+            ..Default::default()
+        })
+    }
+
+    /// Follow a rename without reading the file (online-only files).
+    pub fn update_path(file_id: i64, file_path: &str, last_scan_time: i64) -> Result<Option<Self>, String> {
+        let name = t_utils::get_file_name(file_path);
+        open_conn()?.execute(
+            "UPDATE afiles SET name = ?1, name_pinyin = ?2, last_scan_time = ?3, cloud_only = ?4 WHERE id = ?5",
+            // A file that vanished since the walk is not online-only.
+            params![name, t_utils::natural_sort_key(&name.to_lowercase()), last_scan_time, t_utils::is_cloud_only_path(file_path), file_id],
+        ).map_err(|e| e.to_string())?;
+        Self::get_file_info(file_id)
     }
 
     fn new_with_raw_info(folder_id: i64, file_path: &str, file_type: i64, raw_info: Option<t_libraw::RawInfo>) -> Result<Self, String> {
@@ -2705,6 +2780,8 @@ impl AFile {
             motion_photo_offset,
             album_accessible: true,
             album_visible: true,
+            cloud_only: false,
+            metadata_pending: false,
         };
 
         Ok(file)
@@ -2962,9 +3039,9 @@ impl AFile {
                 is_favorite, rating, rotate, comments, has_tags,
                 e_make, e_model, e_date_time, e_software, e_artist, e_copyright, e_description, e_lens_make, e_lens_model, e_exposure_bias, e_exposure_time, e_f_number, e_focal_length, e_iso_speed, e_flash, e_orientation,
                 gps_latitude, gps_longitude, gps_altitude, geo_name, geo_admin1, geo_admin2, geo_cc,
-                last_scan_time, content_identifier, media_subtype, motion_photo_offset
+                last_scan_time, content_identifier, media_subtype, motion_photo_offset, cloud_only, metadata_pending
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47)
             ON CONFLICT(folder_id, name) DO NOTHING",
             params![
                 self.folder_id,
@@ -3018,6 +3095,8 @@ impl AFile {
                 self.content_identifier,
                 self.media_subtype,
                 self.motion_photo_offset,
+                self.cloud_only,
+                self.metadata_pending,
             ]
         ).map_err(|e| e.to_string())?;
         Ok(result)
@@ -3231,7 +3310,7 @@ impl AFile {
                 c.id AS album_id, c.name AS album_name,
                 (SELECT 1 FROM athumbs t WHERE t.file_id = a.id LIMIT 1) AS has_thumbnail,
                 (SELECT 1 FROM acollections_files cf WHERE cf.file_id = a.id LIMIT 1) AS has_collections,
-                CASE WHEN a.embeds IS NOT NULL THEN 1 ELSE 0 END AS has_embedding,
+                CASE WHEN {} THEN 1 ELSE 0 END AS has_embedding,
                 a.has_faces,
                 a.last_scan_time,
                 a.content_identifier,
@@ -3243,13 +3322,28 @@ impl AFile {
                     ELSE NULL
                 END AS live_photo_video_path,
                 a.motion_photo_offset,
-                {} AS album_visible
+                {} AS album_visible,
+                a.cloud_only,
+                a.metadata_pending
             FROM afiles a
             LEFT JOIN afolders b ON a.folder_id = b.id
             LEFT JOIN albums c ON b.album_id = c.id
             LEFT JOIN afiles lpv ON a.live_photo_video_id = lpv.id
             LEFT JOIN afolders lpf ON lpv.folder_id = lpf.id",
+            Self::embedding_matches_model_sql("a", &crate::t_omlx::active_model_id()),
             Self::album_joined_filter_predicate("a", "b", "c")
+        )
+    }
+
+    /// SQL predicate: `alias` has a vector produced by `model_id`. Scans use
+    /// it through has_embedding, so after switching providers they embed the
+    /// files whose vectors came from the other one instead of skipping them.
+    fn embedding_matches_model_sql(alias: &str, model_id: &str) -> String {
+        let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
+        format!(
+            "({alias}.embeds IS NOT NULL AND COALESCE({alias}.embed_model, {}) = {})",
+            quote(crate::t_omlx::BUILTIN_EMBED_MODEL),
+            quote(model_id),
         )
     }
 
@@ -3324,6 +3418,8 @@ impl AFile {
             motion_photo_offset: row.get(55)?,
             album_accessible: row.get::<_, Option<i64>>(44)?.is_none_or(t_utils::album_accessible),
             album_visible: row.get(56)?,
+            cloud_only: row.get(57)?,
+            metadata_pending: row.get(58)?,
         })
     }
 
@@ -3734,7 +3830,73 @@ impl AFile {
     ) -> Result<(Self, i32), String> {
         // Check if the file exists
         let existing_file = Self::fetch(folder_id, file_path)?;
+        // Opening an online-only file downloads it: decide from its attributes first.
+        let metadata = std::fs::metadata(file_path).map_err(|e| e.to_string())?;
+        let action = cloud_scan_action(
+            t_utils::is_cloud_only(&metadata),
+            existing_file.as_ref(),
+            metadata.len() as i64,
+            t_utils::systemtime_to_timestamp(metadata.modified().ok()),
+        );
+        let existing_id = existing_file.as_ref().and_then(|file| file.id);
+        match action {
+            CloudScanAction::Read => {}
+            CloudScanAction::ReadPending => {
+                let file_id = existing_id.ok_or("Existing DB record is missing file id")?;
+                let mut file = Self::update_file_info(file_id, file_path, last_scan_time)?
+                    .ok_or("File not found")?;
+                // Whatever was cached while the file was online-only may be stale.
+                let _ = AThumb::delete(file_id);
+                open_conn()?.execute(
+                    "UPDATE afiles SET embeds = NULL, cloud_only = 0, metadata_pending = 0 WHERE id = ?1",
+                    params![file_id],
+                ).map_err(|e| e.to_string())?;
+                file.has_thumbnail = Some(false);
+                file.has_embedding = Some(false);
+                file.cloud_only = false;
+                file.metadata_pending = false;
+                return Ok((file, 2));
+            }
+            CloudScanAction::InsertStub => {
+                if Self::cloud_stub(folder_id, file_path, file_type, last_scan_time)?.insert()? == 0 {
+                    // Lost an insert race; see the comment on the regular insert below.
+                    return Self::add_to_db(folder_id, file_path, file_type, last_scan_time);
+                }
+                return Self::fetch(folder_id, file_path)?
+                    .map(|file| (file, 1))
+                    .ok_or_else(|| format!("Inserted file missing from DB: {}", file_path));
+            }
+            CloudScanAction::MarkSeen => {
+                let file_id = existing_id.ok_or("Existing DB record is missing file id")?;
+                open_conn()?.execute(
+                    "UPDATE afiles SET last_scan_time = ?1, cloud_only = 1 WHERE id = ?2",
+                    params![last_scan_time, file_id],
+                ).map_err(|e| e.to_string())?;
+                let file = existing_file.ok_or("File not found")?;
+                return Ok((Self { cloud_only: true, last_scan_time: Some(last_scan_time), ..file }, 0));
+            }
+            CloudScanAction::UpdateStat => {
+                let file_id = existing_id.ok_or("Existing DB record is missing file id")?;
+                let info = t_utils::FileInfo::new(file_path)?;
+                open_conn()?.execute(
+                    "UPDATE afiles SET size = ?1, created_at = ?2, modified_at = ?3, last_scan_time = ?4,
+                     cloud_only = 1, metadata_pending = 1 WHERE id = ?5",
+                    params![info.file_size, info.created, info.modified, last_scan_time, file_id],
+                ).map_err(|e| e.to_string())?;
+                let file = existing_file.ok_or("File not found")?;
+                // Status 0: keep the old thumbnail ([M1]); status 2 would invalidate it.
+                return Ok((Self {
+                    size: info.file_size, created_at: info.created, modified_at: info.modified,
+                    last_scan_time: Some(last_scan_time), cloud_only: true, metadata_pending: true, ..file
+                }, 0));
+            }
+        }
         if let Some(mut file) = existing_file {
+            // The user brought the file back ("Always keep on this device").
+            if file.cloud_only {
+                if let Some(id) = file.id { Self::update_column(id, "cloud_only", &false)?; }
+                file.cloud_only = false;
+            }
             // check file modified time or if thumbnail is missing
             let file_info = t_utils::FileInfo::new(file_path)?;
             // Re-read legacy ISO dates using source-aware timezone handling.
@@ -4340,6 +4502,10 @@ impl AFile {
             {
                 let file_path = PathBuf::from(&folder_path).join(&candidate.name);
                 let file_path = file_path.to_string_lossy();
+                // Probing an online-only video would download it; it is probed once local.
+                if !t_utils::content_readable(&file_path) {
+                    continue;
+                }
                 let identifier = t_video::get_video_metadata(&file_path)
                     .ok()
                     .and_then(|metadata| metadata.content_identifier)
@@ -4383,6 +4549,10 @@ impl AFile {
 
             let file_path = PathBuf::from(&folder_path).join(&image.name);
             let file_path = file_path.to_string_lossy();
+            // Reading an online-only image would download it; filename pairing still applies.
+            if !t_utils::content_readable(&file_path) {
+                continue;
+            }
             let identifier = crate::t_apple_sidecar::scan_apple_content_identifiers(&file_path)
                 .into_iter()
                 .map(|identifier| identifier.to_ascii_lowercase())
@@ -5366,6 +5536,7 @@ impl AFile {
                 let seed = random_seed.rem_euclid(2_147_483_647);
                 format!("((({id_hash} | {seed}) - ({id_hash} & {seed}))), a.id")
             }
+            8 => format!("a.id {}", dir), // added order
             9 => "a.id ASC".to_string(), // internal: stable append order during scanning
             _ => format!("a.taken_date {}, a.id {}", dir, dir),
         }
@@ -5438,20 +5609,22 @@ impl AFile {
     }
 
     fn build_smart_name_condition(
+        column: &str,
         operator: &str,
         value: &JsonValue,
         sql_params: &mut Vec<Box<dyn ToSql>>,
     ) -> Result<String, String> {
         let name =
             Self::smart_rule_string(value).ok_or_else(|| "Name value required".to_string())?;
+        let name = name.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
         match operator {
             "contains" | "has" => {
                 sql_params.push(Box::new(format!("%{}%", name)));
-                Ok("a.name LIKE ? COLLATE NOCASE".to_string())
+                Ok(format!("{} LIKE ? ESCAPE '\\' COLLATE NOCASE", column))
             }
             "not_contains" | "not_has" => {
                 sql_params.push(Box::new(format!("%{}%", name)));
-                Ok("a.name NOT LIKE ? COLLATE NOCASE".to_string())
+                Ok(format!("{} NOT LIKE ? ESCAPE '\\' COLLATE NOCASE", column))
             }
             _ => Err(format!("Unsupported name operator: {}", operator)),
         }
@@ -5624,7 +5797,8 @@ impl AFile {
         let value = &rule.value;
 
         match field {
-            "name" => Self::build_smart_name_condition(operator, value, sql_params),
+            "folder_name" => Self::build_smart_name_condition("b.name", operator, value, sql_params),
+            "name" => Self::build_smart_name_condition("a.name", operator, value, sql_params),
             "file_type" => {
                 let mask = Self::smart_rule_i64(value)
                     .ok_or_else(|| "File type value required".to_string())?;
@@ -6452,6 +6626,49 @@ impl AFile {
         Self::query_files(&sql, &[&folder_id])
     }
 
+    /// Recheck only the opened folder; avoid loading full catalog records or
+    /// scanning every file in the library during background mtime synchronization.
+    pub fn refresh_cloud_state(folder_id: i64, folder_path: &str) -> Result<(bool, bool), String> {
+        if !cfg!(any(target_os = "windows", target_os = "macos")) {
+            return Ok((false, false));
+        }
+        let mut conn = open_conn()?;
+        Self::refresh_cloud_state_on(&mut conn, folder_id, Path::new(folder_path))
+    }
+
+    fn refresh_cloud_state_on(conn: &mut Connection, folder_id: i64, folder_path: &Path) -> Result<(bool, bool), String> {
+        let mut changed = Vec::new();
+        let mut needs_indexing = false;
+        {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, cloud_only, metadata_pending FROM afiles WHERE folder_id = ?1",
+            ).map_err(|e| e.to_string())?;
+            let files = stmt.query_map([folder_id], |row| Ok((
+                row.get::<_, i64>(0)?, row.get::<_, String>(1)?,
+                row.get::<_, bool>(2)?, row.get::<_, bool>(3)?,
+            ))).map_err(|e| e.to_string())?;
+            for file in files {
+                let (id, name, was_cloud_only, pending) = file.map_err(|e| e.to_string())?;
+                let Ok(metadata) = fs::metadata(folder_path.join(name)) else { continue };
+                let cloud_only = t_utils::is_cloud_only(&metadata);
+                needs_indexing |= !cloud_only && (was_cloud_only || pending);
+                if cloud_only != was_cloud_only { changed.push((id, cloud_only)); }
+            }
+        }
+        if !changed.is_empty() {
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            {
+                let mut update = tx.prepare("UPDATE afiles SET cloud_only = ?1 WHERE id = ?2")
+                    .map_err(|e| e.to_string())?;
+                for (id, cloud_only) in &changed {
+                    update.execute(params![cloud_only, id]).map_err(|e| e.to_string())?;
+                }
+            }
+            tx.commit().map_err(|e| e.to_string())?;
+        }
+        Ok((!changed.is_empty(), needs_indexing))
+    }
+
     // --- AI Logic ---
 
     /// check ai status
@@ -6467,31 +6684,23 @@ impl AFile {
         }
     }
 
-    /// get query embedding from search text or similar image id, computed by
-    /// the given provider snapshot (None = built-in engine)
+    /// get query embedding from search text or similar image id with the
+    /// built-in engine. oMLX query vectors are computed by the search command
+    /// outside the library guard (see t_cmds::omlx_query_embedding).
     pub fn get_query_embedding(
         state: &State<t_ai::AiState>,
         params: &ImageSearchParams,
-        provider: Option<&OmlxEmbeddingSettings>,
     ) -> Result<Option<Vec<f32>>, String> {
         if !params.search_text.is_empty() {
-            // The oMLX provider computes text embeddings over HTTP and must
-            // not hold the ONNX engine lock while the request is in flight.
-            if let Some(settings) = provider {
-                return Ok(Some(crate::t_omlx::embed_search_text(
-                    settings,
-                    &params.search_text,
-                )?));
-            }
             let mut engine = state.0.lock().unwrap();
             Ok(Some(engine.encode_text(&params.search_text)?))
         } else if let Some(file_id) = params.file_id.filter(|&id| id > 0) {
-            let model_id = crate::t_omlx::embed_model_id(provider);
-            match Self::get_embedding_for_model(file_id, &model_id) {
+            let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+            match Self::get_embedding_for_model(file_id, model_id) {
                 Ok(emb) => Ok(Some(emb)),
                 Err(_) => {
-                    Self::generate_embedding_with(state, file_id, provider)?;
-                    Ok(Some(Self::get_embedding_for_model(file_id, &model_id)?))
+                    Self::generate_embedding(state, file_id)?;
+                    Ok(Some(Self::get_embedding_for_model(file_id, model_id)?))
                 }
             }
         } else {
@@ -6499,99 +6708,77 @@ impl AFile {
         }
     }
 
-    /// generate embedding for a file with the active provider
+    /// generate embedding for a file with the built-in engine. oMLX vectors
+    /// are produced outside the library guard (t_omlx batches and
+    /// t_cmds::omlx_file_embedding).
     pub fn generate_embedding(
         state: &State<t_ai::AiState>,
         file_id: i64,
     ) -> Result<String, String> {
-        let provider = crate::t_omlx::active_settings();
-        Self::generate_embedding_with(state, file_id, provider.as_ref())
-    }
-
-    /// generate embedding for a file with a provider snapshot (None = built-in
-    /// engine). The vector is stored under that snapshot's model id, even if
-    /// the active provider changes while it is being computed.
-    pub fn generate_embedding_with(
-        state: &State<t_ai::AiState>,
-        file_id: i64,
-        provider: Option<&OmlxEmbeddingSettings>,
-    ) -> Result<String, String> {
-        let model_id = crate::t_omlx::embed_model_id(provider);
-        let Some(file_path) = Self::embedding_target(file_id, &model_id)? else {
+        let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+        let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
             return Ok("Embedding already exists".to_string());
         };
 
-        // 4. Generate embedding
-        // The oMLX provider embeds image bytes over HTTP (no engine lock);
-        // the built-in provider keeps the in-process ONNX path.
-        let embedding = if let Some(settings) = provider {
-            // Thumbnails are always in a server-decodable format; regenerate
-            // the cached thumbnail when the cache file is missing.
-            let library_id = AThumb::get_current_library_id();
-            let image_bytes = match AThumb::fetch_raw_for_library(file_id, &library_id) {
-                Ok(Some(bytes)) if !bytes.is_empty() => bytes,
-                _ => {
-                    let bytes = std::fs::read(&file_path)
-                        .map_err(|e| format!("Failed to read image file: {}", e))?;
-                    if !crate::t_omlx::is_server_decodable_image(&bytes) {
-                        return Err(format!(
-                            "no thumbnail available and original format is not decodable by the server: {}",
-                            file_path
-                        ));
-                    }
-                    bytes
-                }
-            };
-            crate::t_omlx::embed_single_image(settings, &image_bytes)?
-        } else {
-            let mut engine = state.0.lock().unwrap();
+        // Without a stored thumbnail, encoding reads (and would download) an online-only original.
+        let thumb = AThumb::fetch(file_id);
+        if !matches!(&thumb, Ok(Some(t)) if t.thumb_data.is_some()) && t_utils::is_cloud_only_path(&file_path) {
+            return Err("Skipped: the original is online-only".to_string());
+        }
 
-            // Optimized: Use thumbnail if available (much faster than loading original)
-            // Fallback to original file if thumbnail is missing or fails to process
-            match AThumb::fetch(file_id) {
-                Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
-                    let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
-                    match panic::catch_unwind(AssertUnwindSafe(|| {
-                        engine.encode_image_from_bytes(thumb_bytes)
-                    })) {
-                        Ok(res) => res.or_else(|_| {
-                            // If thumbnail processing fails (e.g. corrupted), try original
-                            match panic::catch_unwind(AssertUnwindSafe(|| {
-                                engine.encode_image(&file_path)
-                            })) {
-                                Ok(res2) => res2,
-                                Err(_) => Err(format!(
-                                    "Embedding panic while encoding original image: {}",
-                                    file_path
-                                )),
-                            }
-                        }),
-                        // If thumbnail path panics, still try original once.
-                        Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
-                            engine.encode_image(&file_path)
+        // 4. Generate embedding
+        let mut engine = state.0.lock().unwrap();
+
+        let encode_original = |engine: &mut t_ai::AiEngine| {
+            if !t_utils::content_readable(&file_path) {
+                return Err("Skipped: the original is not local".to_string());
+            }
+            engine.encode_image(&file_path)
+        };
+
+        // Optimized: Use thumbnail if available (much faster than loading original)
+        // Fallback to original file if thumbnail is missing or fails to process
+        let embedding = match thumb {
+            Ok(Some(thumb)) if thumb.thumb_data.is_some() => {
+                let thumb_bytes = thumb.thumb_data.as_ref().unwrap();
+                match panic::catch_unwind(AssertUnwindSafe(|| {
+                    engine.encode_image_from_bytes(thumb_bytes)
+                })) {
+                    Ok(res) => res.or_else(|_| {
+                        // If thumbnail processing fails (e.g. corrupted), try original
+                        match panic::catch_unwind(AssertUnwindSafe(|| {
+                            encode_original(&mut engine)
                         })) {
                             Ok(res2) => res2,
                             Err(_) => Err(format!(
                                 "Embedding panic while encoding original image: {}",
                                 file_path
                             )),
-                        },
-                    }
+                        }
+                    }),
+                    // If thumbnail path panics, still try original once.
+                    Err(_) => match panic::catch_unwind(AssertUnwindSafe(|| {
+                        encode_original(&mut engine)
+                    })) {
+                        Ok(res2) => res2,
+                        Err(_) => Err(format!(
+                            "Embedding panic while encoding original image: {}",
+                            file_path
+                        )),
+                    },
                 }
-                _ => match panic::catch_unwind(AssertUnwindSafe(|| {
-                    engine.encode_image(&file_path)
-                })) {
-                    Ok(res) => res,
-                    Err(_) => Err(format!(
-                        "Embedding panic while encoding original image: {}",
-                        file_path
-                    )),
-                },
-            }?
-        };
+            }
+            _ => match panic::catch_unwind(AssertUnwindSafe(|| encode_original(&mut engine))) {
+                Ok(res) => res,
+                Err(_) => Err(format!(
+                    "Embedding panic while encoding original image: {}",
+                    file_path
+                )),
+            },
+        }?;
 
         // 5. Save to DB
-        Self::update_embedding(file_id, &embedding, &model_id)
+        Self::update_embedding(file_id, &embedding, model_id)
             .map_err(|e| format!("DB Error: {}", e))?;
 
         Ok("Embedding generated and saved".to_string())
@@ -6606,7 +6793,7 @@ impl AFile {
         file_id: i64,
     ) -> Result<String, String> {
         let Some(settings) = crate::t_omlx::active_settings() else {
-            return Self::generate_embedding_with(state, file_id, None);
+            return Self::generate_embedding(state, file_id);
         };
         let Some(file_path) = Self::embedding_target(file_id, &settings.model_id())? else {
             return Ok("Embedding already exists".to_string());
@@ -6823,20 +7010,43 @@ impl AFile {
     pub fn search_similar_images(
         state: &State<t_ai::AiState>,
         params: ImageSearchParams,
+        library_id: &str,
     ) -> Result<Vec<Self>, String> {
-        // One provider snapshot for the query vector, the stored vectors it
-        // is compared with, and the score filter.
-        let provider = crate::t_omlx::active_settings();
-        let model_id = crate::t_omlx::embed_model_id(provider.as_ref());
-
         // 1. Determine Target Embedding
-        let embedding = Self::get_query_embedding(state, &params, provider.as_ref())?
+        let embedding = Self::get_query_embedding(state, &params)?
             .ok_or_else(|| "No file_id or search_text provided".to_string())?;
+        Self::search_similar_images_with(&params, None, library_id, &embedding)
+    }
+
+    /// Bytes to embed for `file_id` when it has no vector for `model_id` yet
+    /// (None when it already has one). Reads the database, so callers hold
+    /// the library guard; the embedding request itself happens without it.
+    pub fn embedding_input(
+        file_id: i64,
+        model_id: &str,
+        library_id: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
+            return Ok(None);
+        };
+        crate::t_omlx::image_input_bytes(file_id, &file_path, library_id).map(Some)
+    }
+
+    /// search similar images for an already computed query vector. `provider`
+    /// is the snapshot that produced it (None = built-in engine), so the
+    /// stored vectors and the score filter match the query.
+    pub fn search_similar_images_with(
+        params: &ImageSearchParams,
+        provider: Option<&OmlxEmbeddingSettings>,
+        library_id: &str,
+        embedding: &[f32],
+    ) -> Result<Vec<Self>, String> {
+        let model_id = crate::t_omlx::embed_model_id(provider);
 
         // 2. Perform Vector Search
         let conn = open_conn()?;
         let sql = Self::embedding_search_sql(params.file_type);
-        let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, &embedding)?;
+        let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, embedding)?;
 
         // 3. Filter. The oMLX provider filters relative to the best match
         // (calibrated per library and model); the built-in CLIP path keeps
@@ -6853,13 +7063,8 @@ impl AFile {
         } else {
             None
         };
-        let calibration = match provider.as_ref() {
-            Some(settings) => Some(crate::t_omlx::calibration_for(
-                settings,
-                &t_config::current_library_id()?,
-            )),
-            None => None,
-        };
+        let calibration =
+            provider.map(|settings| crate::t_omlx::calibration_for(settings, library_id));
         let mut scores =
             Self::filter_search_scores(scores, threshold, query_file_id, calibration, |top_ids| {
                 Self::get_embeddings_by_ids_on(&conn, top_ids)
@@ -7378,7 +7583,7 @@ impl AThumb {
             return Err("Invalid thumbnail cache key".to_string());
         }
 
-        let cache_root = t_config::get_app_cache_dir()?
+        let cache_root = crate::t_cache_storage::root()?
             .join(library_id)
             .join(album_id.to_string());
         Ok(cache_root
@@ -7392,6 +7597,7 @@ impl AThumb {
         thumb_key: &str,
         preferred_extension: &str,
     ) -> Result<Option<Vec<u8>>, String> {
+        let _cache_access = crate::t_cache_storage::access()?;
         let extensions = if preferred_extension == "png" {
             Self::CACHE_EXTENSIONS
         } else {
@@ -7421,6 +7627,7 @@ impl AThumb {
         thumb_key: &str,
         data: &[u8],
     ) -> Result<PathBuf, String> {
+        let _cache_access = crate::t_cache_storage::access()?;
         let extension = if Self::is_png_bytes(data) {
             "png"
         } else if Self::is_complete_jpeg(data) {
@@ -7459,6 +7666,7 @@ impl AThumb {
         album_id: i64,
         thumb_key: &str,
     ) {
+        let Ok(_cache_access) = crate::t_cache_storage::access() else { return; };
         for extension in Self::CACHE_EXTENSIONS {
             if let Ok(path) =
                 Self::get_thumb_cache_path_for_key(library_id, album_id, thumb_key, extension)
@@ -7507,7 +7715,8 @@ impl AThumb {
                 .collect::<Result<HashSet<String>, String>>()?
         };
 
-        let cache_root = t_config::get_app_cache_dir()?.join(&target_library_id);
+        let _cache_access = crate::t_cache_storage::access()?;
+        let cache_root = crate::t_cache_storage::root()?.join(&target_library_id);
         if !cache_root.is_dir() {
             return Ok(ThumbnailCacheCleanupResult {
                 files_removed: 0,
@@ -7561,6 +7770,7 @@ impl AThumb {
         old_album_id: i64,
         new_album_id: i64,
     ) -> Result<(), String> {
+        let _cache_access = crate::t_cache_storage::access()?;
         for extension in Self::CACHE_EXTENSIONS {
             let old_path = Self::get_thumb_cache_path_for_key(
                 library_id,
@@ -7650,6 +7860,9 @@ impl AThumb {
         known_duration: Option<u64>,
         seek_percent: Option<u8>,
     ) -> Result<Option<Self>, String> {
+        if !t_utils::content_readable(file_path) {
+            return Self::fetch_for_library(file_id, library_id);
+        }
         if file_type == 3 {
             if let Some(companion) = crate::t_raw_display::paired_file(file_id, prefer_embedded_raw_thumbnail) {
                 if let (Some(companion_id), Some(path)) = (companion.id, companion.file_path.as_deref()) {
@@ -8083,8 +8296,13 @@ impl AThumb {
         library_id: &str,
         known_duration: Option<u64>,
         seek_percent: Option<u8>,
+        require_cached_bytes: bool,
     ) -> Result<Option<Self>, String> {
-        if Self::should_use_original_image(file_id, file_type, thumbnail_size) {
+        // Reading an online-only original would download it; keep whatever is cached.
+        if t_utils::is_cloud_only_path(file_path) {
+            return Self::fetch_for_library(file_id, library_id);
+        }
+        if !require_cached_bytes && Self::should_use_original_image(file_id, file_type, thumbnail_size) {
             let athumb = Self {
                 id: None,
                 file_id,
@@ -8160,7 +8378,35 @@ impl AThumb {
             &library_id,
             known_duration,
             seek_percent,
+            false,
         )
+    }
+
+    /// Explicit download/index operation: always persist bytes, even for small images.
+    pub fn cache_cloud_file_thumbnail(
+        file_id: i64,
+        file_path: &str,
+        file_type: i64,
+        orientation: i32,
+        thumbnail_size: u32,
+        options: RawDisplayOptions,
+        known_duration: Option<u64>,
+    ) -> Result<Option<Self>, String> {
+        let _generation_guard = Self::acquire_generation_guard(file_id, thumbnail_size);
+        Self::create_cache_backed_thumb_for_library(
+            file_id, file_path, file_type, orientation, thumbnail_size, options,
+            &Self::get_current_library_id(), known_duration, None, true,
+        )
+    }
+
+    /// Cached thumbnail of an online-only file, served without touching the original:
+    /// staleness checks would delete it, and a small image (error_code 2) is shown from its original.
+    fn cloud_only_cached(thumbnail: Self, file_path: &str, thumbnail_size: u32, orientation: i32) -> Result<Option<Self>, String> {
+        if thumbnail.error_code == 2 {
+            // Not persisted: the grid shows its placeholder until the file is local again.
+            return Ok(Some(Self { error_code: 1, ..thumbnail }));
+        }
+        Self::ensure_cached(thumbnail, file_path, thumbnail_size, orientation).map(Some)
     }
 
     pub fn get_thumb_if_available(
@@ -8172,7 +8418,7 @@ impl AThumb {
         force_regenerate: bool,
         album_accessible: bool,
     ) -> Result<Option<Self>, String> {
-        if !album_accessible || (force_regenerate && !t_utils::file_accessible(file_path)) {
+        if !album_accessible || (force_regenerate && !t_utils::content_readable(file_path)) {
             return Self::fetch(file_id);
         }
 
@@ -8182,6 +8428,9 @@ impl AThumb {
         }
 
         if let Ok(Some(thumbnail)) = Self::fetch(file_id) {
+            if t_utils::is_cloud_only_path(file_path) {
+                return Self::cloud_only_cached(thumbnail, file_path, thumbnail_size, orientation);
+            }
             if thumbnail.raw_display_is_stale(file_path, orientation, prefer_embedded_raw_thumbnail) {
                 let _ = Self::delete(file_id);
                 return Ok(None);
@@ -8224,13 +8473,17 @@ impl AThumb {
         trust_cached: bool,
         album_accessible: bool,
     ) -> Result<Option<Self>, String> {
-        if !album_accessible || (force_regenerate && !t_utils::file_accessible(file_path)) {
+        if !album_accessible || (force_regenerate && !t_utils::content_readable(file_path)) {
             return Ok(Some(thumbnail));
         }
 
         if force_regenerate {
             let _ = Self::delete(thumbnail.file_id);
             return Ok(None);
+        }
+
+        if t_utils::is_cloud_only_path(file_path) {
+            return Self::cloud_only_cached(thumbnail, file_path, thumbnail_size, orientation);
         }
 
         if thumbnail.raw_display_is_stale(file_path, orientation, prefer_embedded_raw_thumbnail) {
@@ -8341,7 +8594,7 @@ impl AThumb {
         seek_percent: Option<u8>,
     ) -> Result<Option<Self>, String> {
         let album_accessible = Self::get_file_album_id(file_id)?.is_none_or(t_utils::album_accessible);
-        if !album_accessible || (force_regenerate && !t_utils::file_accessible(file_path)) {
+        if !album_accessible || (force_regenerate && !t_utils::content_readable(file_path)) {
             return Self::fetch(file_id);
         }
 
@@ -8405,7 +8658,10 @@ impl AThumb {
             if thumb.error_code == 2 {
                 if let Ok(Some(file)) = AFile::get_file_info(file_id) {
                     if let Some(ref file_path) = file.file_path {
-                        if let Ok(data) = std::fs::read(file_path) {
+                        // A small image is shown from its original; an online-only one would download.
+                        if t_utils::content_readable(file_path)
+                            && let Ok(data) = std::fs::read(file_path)
+                        {
                             return Ok(Some(data));
                         }
                     }
@@ -8447,6 +8703,7 @@ impl AThumb {
                 library_id,
                 file.duration.map(|d| d as u64),
                 None,
+                true,
             )?
             .and_then(|thumb| thumb.thumb_data));
         }
@@ -9219,6 +9476,7 @@ impl Person {
 
         // Helper to load and rotate original image
         let load_original = || -> Option<(image::DynamicImage, u32, u32)> {
+            if !t_utils::content_readable(&full_path.to_string_lossy()) { return None; }
             let mut dyn_img = image::open(&full_path).ok()?;
             dyn_img = match orientation {
                 3 => dyn_img.rotate180(),
@@ -10366,6 +10624,8 @@ fn create_db_internal() -> Result<(), String> {
             media_subtype TEXT,
             live_photo_video_id INTEGER,
             motion_photo_offset INTEGER,
+            cloud_only INTEGER NOT NULL DEFAULT 0,
+            metadata_pending INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (folder_id) REFERENCES afolders(id) ON DELETE CASCADE
         )",
         [],
@@ -10734,6 +10994,27 @@ mod tag_group_query_tests {
     use super::*;
 
     #[test]
+    fn added_order_pagination_ignores_file_dates_and_rescans() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE afiles(id INTEGER PRIMARY KEY AUTOINCREMENT, taken_date INTEGER, last_scan_time INTEGER);
+            INSERT INTO afiles(taken_date, last_scan_time) VALUES(300, 1), (100, 1), (200, 1);
+            UPDATE afiles SET last_scan_time=2 WHERE id=1;").unwrap();
+        for (direction, expected) in [(0, vec![1_i64, 2, 3]), (1, vec![3_i64, 2, 1])] {
+            let order = AFile::build_order_clause_values(8, direction, 0);
+            let mut ids = Vec::new();
+            for offset in [0, 2] {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT a.id FROM afiles a ORDER BY {order} LIMIT 2 OFFSET ?1"
+                )).unwrap();
+                ids.extend(stmt.query_map([offset], |row| row.get::<_, i64>(0))
+                    .unwrap().collect::<Result<Vec<_>, _>>().unwrap());
+            }
+            assert_eq!(ids, expected);
+        }
+        assert_eq!(AFile::build_order_clause_values(9, 1, 0), "a.id ASC");
+    }
+
+    #[test]
     fn group_filter_and_counts_deduplicate_and_honor_visibility() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE albums(id INTEGER PRIMARY KEY, path TEXT, file_types INTEGER, small_image_filter INTEGER, excluded_folders TEXT);
@@ -11014,6 +11295,41 @@ mod raw_display_cache_tests {
         assert_eq!(retained.thumb_size, Some(256));
     }
 
+    /// Set LAP_CLOUD_ONLY_FILE to run: a forced refresh must keep the cached thumbnail of an online-only file.
+    #[test]
+    fn forced_refresh_keeps_cached_thumbnail_of_online_only_file() {
+        let Ok(path) = std::env::var("LAP_CLOUD_ONLY_FILE") else { return };
+        let thumb = AThumb {
+            id: Some(1), file_id: 42, error_code: 0,
+            thumb_data: Some(vec![1, 2, 3]), thumb_key: Some("cloud-cache-key".into()),
+            thumb_mtime: Some(123), thumb_size: Some(256), updated_at: Some(123),
+            thumb_data_base64: Some("AQID".into()),
+        };
+        let retained = AThumb::resolve_fetched_thumb_if_available(
+            thumb, &path, 512, 1, RawDisplayOptions::default(), true, false, true,
+        ).unwrap().unwrap();
+        assert_eq!(retained.thumb_data, Some(vec![1, 2, 3]));
+        assert!(crate::t_utils::is_cloud_only_path(&path), "the thumbnail check downloaded the file");
+    }
+
+    /// Set LAP_CLOUD_ONLY_FILE to run: an online-only file keeps its thumbnail even when its date
+    /// changed remotely, and a small image is not served from its original.
+    #[test]
+    fn online_only_thumbnail_skips_staleness_and_original_display() {
+        let Ok(path) = std::env::var("LAP_CLOUD_ONLY_FILE") else { return };
+        // file_id -1: nothing to delete in the real catalog if the guard is missing.
+        let thumb = |error_code| AThumb {
+            id: Some(1), file_id: -1, error_code, thumb_data: None, thumb_key: None,
+            thumb_mtime: Some(123), thumb_size: Some(256), updated_at: Some(123), thumb_data_base64: None,
+        };
+        let resolve = |t| AThumb::resolve_fetched_thumb_if_available(
+            t, &path, 512, 1, RawDisplayOptions::default(), false, false, true,
+        ).unwrap();
+        assert_eq!(resolve(thumb(0)).map(|t| t.error_code), Some(0), "a stale-dated cached thumbnail was dropped");
+        assert_eq!(resolve(thumb(2)).map(|t| t.error_code), Some(1), "a small image would be shown from its original");
+        assert!(crate::t_utils::is_cloud_only_path(&path));
+    }
+
     #[test]
     fn known_offline_album_returns_cache_without_validating_or_deleting_it() {
         let original = std::env::temp_dir().join(format!("lap-offline-thumb-{}.jpg", uuid::Uuid::new_v4()));
@@ -11141,6 +11457,24 @@ mod embedding_search_tests {
         };
         assert_eq!(pending(OMLX_MODEL), vec![1, 2, 4], "legacy rows need an oMLX re-index");
         assert_eq!(pending(BUILTIN_EMBED_MODEL), vec![3, 4]);
+    }
+
+    #[test]
+    fn has_embedding_only_counts_vectors_of_the_active_model() {
+        let conn = mixed_library();
+        let with_embedding = |model: &str| -> Vec<i64> {
+            let sql = format!(
+                "SELECT a.id FROM afiles a WHERE {} ORDER BY a.id",
+                AFile::embedding_matches_model_sql("a", model)
+            );
+            let mut stmt = conn.prepare(&sql).unwrap();
+            stmt.query_map([], |row| row.get(0)).unwrap().map(Result::unwrap).collect()
+        };
+        // After switching back to the built-in provider, a scan re-embeds 3.
+        assert_eq!(with_embedding(BUILTIN_EMBED_MODEL), vec![1, 2]);
+        assert_eq!(with_embedding(OMLX_MODEL), vec![3]);
+        // Model names are user input; quotes must not break the query.
+        assert!(with_embedding("omlx:it's").is_empty());
     }
 
     #[test]
@@ -11420,6 +11754,121 @@ mod batch_rename_tests {
             assert!(AFile::batch_rename_names_with_conn(&mut conn, &updates).is_err());
             assert_eq!(names(&conn), before);
         }
+    }
+}
+
+#[cfg(test)]
+mod smart_folder_name_tests {
+    use super::*;
+
+    #[test]
+    fn folder_name_matches_across_paths_independently_of_file_names() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE afolders(id INTEGER PRIMARY KEY, name TEXT, path TEXT);
+             CREATE TABLE afiles(id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT);
+             INSERT INTO afolders VALUES
+                (1,'Houses','/work/Houses'), (2,'houses','/personal/houses'),
+                (3,'Trips','/work/Houses/Trips'), (4,'Other','/other');
+             INSERT INTO afiles VALUES
+                (1,1,'photo.jpg'), (2,2,'image.jpg'), (3,3,'child.jpg'), (4,4,'Houses.jpg');"
+        ).unwrap();
+        for (field, operator, expected) in [
+            ("folder_name", "contains", vec![1, 2]),
+            ("folder_name", "not_contains", vec![3, 4]),
+            ("name", "contains", vec![4]),
+        ] {
+            let rule: SmartRule = serde_json::from_value(serde_json::json!({
+                "id": "test", "field": field, "operator": operator, "value": "Houses"
+            })).unwrap();
+            let mut params = Vec::new();
+            let condition = AFile::build_smart_rule_condition(
+                &rule, &mut Vec::new(), &mut false, &mut params,
+            ).unwrap();
+            let ids: Vec<i64> = conn.prepare(&format!(
+                "SELECT a.id FROM afiles a JOIN afolders b ON b.id = a.folder_id WHERE {} ORDER BY a.id",
+                condition,
+            )).unwrap().query_map(rusqlite::params_from_iter(params.iter()), |row| row.get(0))
+                .unwrap().collect::<Result<_, _>>().unwrap();
+            assert_eq!(ids, expected);
+        }
+    }
+    #[test]
+    fn name_filters_treat_like_metacharacters_literally() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE names(name TEXT);
+            INSERT INTO names VALUES ('Project_1'), ('ProjectA1'), ('100%'), ('1000'), ('Back\\slash'), ('Backslash');").unwrap();
+        for column in ["a.name", "b.name"] {
+            for name in ["Project_1", "100%", r"Back\slash"] {
+                for operator in ["contains", "not_contains"] {
+                    let mut params = Vec::new();
+                    let condition = AFile::build_smart_name_condition(
+                        column, operator, &serde_json::json!(name), &mut params,
+                    ).unwrap();
+                    let alias = column.split('.').next().unwrap();
+                    let matches: Vec<String> = conn.prepare(&format!(
+                        "SELECT name FROM names {} WHERE {}", alias, condition,
+                    )).unwrap().query_map(rusqlite::params_from_iter(params.iter()), |row| row.get(0))
+                        .unwrap().collect::<Result<_, _>>().unwrap();
+                    if operator == "contains" {
+                        assert_eq!(matches, vec![name]);
+                    } else {
+                        assert_eq!(matches.len(), 5);
+                        assert!(!matches.iter().any(|value| value == name));
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod cloud_scan_tests {
+    use super::*;
+
+    fn stored(size: i64, modified: i64, pending: bool) -> AFile {
+        AFile { size, modified_at: Some(modified), metadata_pending: pending, ..Default::default() }
+    }
+
+    #[test]
+    fn online_only_files_are_never_read() {
+        assert_eq!(cloud_scan_action(true, None, 10, Some(1)), CloudScanAction::InsertStub);
+        assert_eq!(cloud_scan_action(true, Some(&stored(10, 1, false)), 10, Some(1)), CloudScanAction::MarkSeen);
+        assert_eq!(cloud_scan_action(true, Some(&stored(10, 1, true)), 10, Some(1)), CloudScanAction::MarkSeen);
+        assert_eq!(cloud_scan_action(true, Some(&stored(10, 1, false)), 11, Some(1)), CloudScanAction::UpdateStat);
+        assert_eq!(cloud_scan_action(true, Some(&stored(10, 1, false)), 10, Some(2)), CloudScanAction::UpdateStat);
+    }
+
+    #[test]
+    fn local_files_are_read_and_pending_ones_in_full() {
+        assert_eq!(cloud_scan_action(false, None, 10, Some(1)), CloudScanAction::Read);
+        assert_eq!(cloud_scan_action(false, Some(&stored(10, 1, false)), 10, Some(1)), CloudScanAction::Read);
+        assert_eq!(cloud_scan_action(false, Some(&stored(10, 1, true)), 10, Some(1)), CloudScanAction::ReadPending);
+    }
+    #[test]
+    fn cloud_state_refresh_preserves_pending_work_and_ignores_missing_or_unrelated_files() {
+        let root = std::env::temp_dir().join(format!("lap-cloud-state-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("local.jpg"), b"metadata check only").unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE afiles(id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT,
+            cloud_only INTEGER, metadata_pending INTEGER);
+            INSERT INTO afiles VALUES (1,1,'local.jpg',1,1), (2,1,'missing.jpg',1,1),
+                                      (3,2,'local.jpg',1,1);").unwrap();
+        assert_eq!(AFile::refresh_cloud_state_on(&mut conn, 1, &root).unwrap(), (true, true));
+        let states: Vec<(i64, bool, bool)> = conn.prepare(
+            "SELECT id, cloud_only, metadata_pending FROM afiles ORDER BY id"
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(states, vec![(1,false,true), (2,true,true), (3,true,true)]);
+        // The flag update must not consume pending work if indexing is interrupted.
+        assert_eq!(AFile::refresh_cloud_state_on(&mut conn, 1, &root).unwrap(), (false, true));
+        conn.execute("UPDATE afiles SET metadata_pending = 0 WHERE id = 1", []).unwrap();
+        let writes = conn.total_changes();
+        assert_eq!(AFile::refresh_cloud_state_on(&mut conn, 1, &root).unwrap(), (false, false));
+        assert_eq!(conn.total_changes(), writes, "unchanged folders must not write to the DB");
+        fs::remove_dir_all(root).unwrap();
     }
 }
 

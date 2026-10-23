@@ -1,5 +1,5 @@
 import { setAlbumAccessibility } from '@/common/availability';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { locale } from '@tauri-apps/plugin-os';
 import { listen } from '@tauri-apps/api/event';
 import { config, libConfig } from '@/common/config';
@@ -95,6 +95,24 @@ export async function resetDbStorageDir() {
     console.error('Failed to reset DB storage dir:', error);
     throw error;
   }
+}
+
+export function getThumbnailCacheLocation() {
+  return invoke('get_thumbnail_cache_location');
+}
+
+export function getThumbnailCacheMigrationCount() {
+  return invoke('get_thumbnail_cache_migration_count');
+}
+
+export function changeThumbnailCacheLocation(newDir, onProgress, allowMissingSource = false, operationId) {
+  const channel = new Channel();
+  channel.onmessage = onProgress;
+  return invoke('change_thumbnail_cache_location', { newDir, onProgress: channel, allowMissingSource, operationId });
+}
+
+export function cancelThumbnailCacheMigration(operationId) {
+  return invoke('cancel_thumbnail_cache_migration', { operationId });
 }
 
 // backup / restore
@@ -761,8 +779,8 @@ export async function getQueryCountAndSum(params) {
   return null;
 }
 
-export async function getLibraryVisibleCounts() {
-  try { return await invoke('get_library_visible_counts'); }
+export async function getLibraryVisibleCounts(id) {
+  try { return await invoke('get_library_visible_counts', { id }); }
   catch (error) { console.error('getLibraryVisibleCounts:', error); }
   return null;
 }
@@ -1276,12 +1294,11 @@ export async function getFileThumbById(fileId, thumbnailSize, forceRegenerate = 
 }
 
 export async function getFileThumbs(files, thumbnailSize, forceRegenerate = false, trustCached = false) {
-  try {
-    return await invoke('get_file_thumbs', { files, thumbnailSize, rawDisplayOptions: getRawDisplayOptions(), forceRegenerate, trustCached });
-  } catch (error) {
-    console.log('Failed to get file thumbs:', error);
+  const thumbs = await invoke('get_file_thumbs', { files, thumbnailSize, rawDisplayOptions: getRawDisplayOptions(), forceRegenerate, trustCached });
+  if (!Array.isArray(thumbs) || thumbs.length !== files.length) {
+    throw new Error(`Invalid thumbnail batch response: expected ${files.length} results, received ${Array.isArray(thumbs) ? thumbs.length : 'a non-array response'}`);
   }
-  return [];
+  return thumbs;
 }
 
 // get file info
@@ -1428,6 +1445,11 @@ export async function checkFileExists(filePath) {
 
 export async function checkFileAccessibility(filePath) {
   return invoke('check_file_accessibility', { filePath });
+}
+
+// Live check: reading an online-only file would make the cloud provider download it.
+export async function isCloudOnlyFile(filePath) {
+  return invoke('is_cloud_only_file', { filePath }).catch(() => true);
 }
 
 // set file rotate

@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Bitte versuchen Sie, zu einer anderen Bibliothek zu wechseln."
   },
   "album": {
+    "drop": {
+      "add": "Ordner zum Hinzufügen hierherziehen",
+      "separate": "Dateien und Ordner getrennt ziehen.",
+      "confirm_folder": "Ordner auswählen: {name}",
+      "folders_only": "Bitte einen Ordner hierherziehen."
+    },
     "album_list": "Alben",
     "search_folders": "Ordner suchen",
     "favorite_folders_only": "Nur Lieblingsordner",
@@ -150,6 +156,7 @@
       "validation_name": "Gib einen Namen für das Smart-Album ein.",
       "validation_rule": "Füge mindestens eine vollständige Regel hinzu.",
       "fields": {
+        "folder_name": "Ordnername",
         "name": "Dateiname",
         "file_type": "Dateityp",
         "media_subtype": "Medienuntertyp",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Nur online verfügbar",
+    "cloud_only_pending": "Nur online verfügbar — Dateiinformationen unvollständig",
     "original_unavailable": "Originaldatei nicht verfügbar",
     "requires_original": "Benötigt die Originaldatei. Verbinden Sie das Speichergerät erneut."
   },
@@ -461,7 +470,8 @@
         "Größe",
         "Dimension",
         "Dauer",
-        "Zufällig"
+        "Zufällig",
+        "Hinzugefügt"
       ],
       "similarity": "Ähnlichkeit",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Freigebbar",
       "groups_title": "Duplikatgruppen",
+      "skipped_cloud_only": "{count} reine Onlinedateien übersprungen",
       "actions_title": "Aktionen",
       "compare": "Vergleichen",
       "rescan": "Erneut scannen",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Im Finder anzeigen...",
       "reveal_in_file_explorer": "Im Explorer anzeigen...",
       "refresh_file_info": "Dateiinformationen aktualisieren",
+      "index_cloud_files": "Herunterladen, indexieren und Speicherplatz freigeben",
       "set_album_cover": "Als Albumcover setzen",
       "set_as": "Festlegen als",
       "set_desktop_wallpaper": "Als Desktop-Hintergrund festlegen",
@@ -1001,7 +1013,10 @@
       "cancelled": "Abgebrochen",
       "complete": "Abgeschlossen",
       "succeeded": "Aktualisiert: {count}",
-      "failed": "Fehlgeschlagen: {count}"
+      "failed": "Fehlgeschlagen: {count}",
+      "release_requested": "Freigabe angefordert: {count}",
+      "kept_local": "Auf diesem Gerät behalten: {count}",
+      "kept_local_hint": "Dateien, die immer auf diesem Gerät bleiben sollen oder für die Windows die Speicherplatzfreigabe durch Lap nicht zugelassen hat (überwachter Ordnerzugriff)."
     },
     "image_editor": {
       "title": "Bearbeiten",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Verkleinern",
         "zoom_fit": "Originalgröße / An Fenster anpassen",
         "cycle_background": "Hintergrund wechseln",
-        "toggle_slideshow": "Diashow starten / pausieren",
         "open_new_window": "In neuem Fenster öffnen",
         "open_external_app": "In externer App öffnen",
         "edit_image": "Bearbeiten",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Endgültig löschen",
         "refresh_file_info": "Dateiinfo aktualisieren",
         "print": "Drucken",
-        "toggle_favorite": "Favorit umschalten",
-        "set_clear_rating": "Bewertung setzen / löschen",
-        "mark_pick": "Als ausgewählt markieren",
-        "mark_rejected": "Als abgelehnt markieren",
-        "mark_unreviewed": "Als ungeprüft markieren",
+        "toggle_favorite": "Favorisieren / Favorit entfernen",
+        "toggle_favorite_and_next": "Favorisieren / Favorit entfernen → Weiter",
+        "set_clear_rating": "Bewertung",
+        "set_clear_rating_and_next": "Bewertung → Weiter",
+        "mark_pick": "Auswahl · Ausgewählt",
+        "mark_pick_and_next": "Auswahl · Ausgewählt → Weiter",
+        "mark_rejected": "Auswahl · Abgelehnt",
+        "mark_rejected_and_next": "Auswahl · Abgelehnt → Weiter",
+        "mark_unreviewed": "Auswahl · Nicht geprüft",
+        "mark_unreviewed_and_next": "Auswahl · Nicht geprüft → Weiter",
         "clear_rating": "Bewertung löschen",
         "rate_one": "1 Stern bewerten",
         "rate_two": "2 Sterne bewerten",
         "rate_three": "3 Sterne bewerten",
         "rate_four": "4 Sterne bewerten",
         "rate_five": "5 Sterne bewerten",
-        "edit_tags": "Tags bearbeiten",
-        "edit_collections": "Sammlungen bearbeiten",
-        "edit_comment": "Kommentar bearbeiten",
+        "edit_tags": "Tags",
+        "edit_collections": "Sammlungen",
+        "edit_comment": "Kommentar",
         "rotate": "Ansicht im Uhrzeigersinn drehen",
         "rotate_counterclockwise": "Ansicht gegen den Uhrzeigersinn drehen",
         "thumbnail_increase": "Miniaturansicht vergrößern",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Erweitert",
-      "section_thumbnail_cache": "Miniaturansichts-Cache",
-      "thumbnail_quality": "Miniaturansichtsqualität",
-      "thumbnail_quality_hint": "Legt die Auflösung generierter Miniaturansichten fest. Höhere Einstellungen sehen schärfer aus, benötigen aber mehr Zeit zur Erstellung und mehr Speicherplatz",
-      "section_map": "Karte",
-      "map_provider": "Kartendienst",
-      "map_provider_hint": "Wählt den Kartendienst für die Kartenansicht",
-      "map_provider_options": [
-        "Global (Standard)",
-        "China (Tianditu)"
-      ],
-      "tianditu_token": "Tianditu-API-Token",
-      "tianditu_token_hint": "Für Tianditu-Kacheln erforderlich",
-      "tianditu_token_placeholder": "Token einfügen",
-      "tianditu_token_status_saved": "Gespeichert",
-      "tianditu_token_status_empty": "Nicht konfiguriert",
-      "thumbnail_quality_options": [
-        "Niedrig (256 px)",
-        "Standard (512 px)",
-        "Hoch (1024 px)"
-      ],
-      "section_external_apps": "Externe Apps",
-      "manage_external_apps": "Externe Apps verwalten",
-      "external_image_editor": "Foto öffnen mit",
-      "external_video_app": "Video öffnen mit",
-      "external_app_not_selected": "Keine App ausgewählt",
-      "choose_app": "Auswählen",
-      "clear_app": "Zurücksetzen",
-      "default_app": "Standard",
-      "set_default_app": "Als Standard festlegen",
+      "external_app": {
+        "section_external_apps": "Externe Apps",
+        "manage_external_apps": "Externe Apps verwalten",
+        "external_image_editor": "Foto öffnen mit",
+        "external_video_app": "Video öffnen mit",
+        "external_app_not_selected": "Keine App ausgewählt",
+        "choose_app": "Auswählen",
+        "clear_app": "Zurücksetzen",
+        "default_app": "Standard",
+        "set_default_app": "Als Standard festlegen"
+      },
       "section_diagnostics": "Diagnose",
-      "debug_mode": "Debug-Modus"
+      "debug_mode": "Debug-Modus",
+      "map": {
+        "section_map": "Karte",
+        "map_provider": "Kartendienst",
+        "map_provider_hint": "Wählt den Kartendienst für die Kartenansicht",
+        "map_provider_options": [
+          "Global (Standard)",
+          "China (Tianditu)"
+        ],
+        "tianditu_token": "Tianditu-API-Token",
+        "tianditu_token_hint": "Für Tianditu-Kacheln erforderlich",
+        "tianditu_token_placeholder": "Token einfügen",
+        "tianditu_token_status_saved": "Gespeichert",
+        "tianditu_token_status_empty": "Nicht konfiguriert"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Änderungen werden zurückgenommen…",
+        "cancelled": "Abgebrochen. Der ursprüngliche Cache bleibt erhalten.",
+        "new_location": "Neuer Speicherort: {path}",
+        "migrating": "Miniaturansichten werden verschoben…",
+        "migration_hint": "Die Miniaturansichten aller Bibliotheken werden verschoben. Der neue Speicherort gilt erst nach erfolgreichem Abschluss. Beim Abbrechen bleibt der bisherige Speicherort erhalten.",
+        "migration_progress": "Fortschritt der Migration",
+        "ready": "Bereit zur Migration",
+        "start": "Starten",
+        "cancelling": "Wird abgebrochen…",
+        "rebuild_message": "Der bisherige Cache ist nicht verfügbar. Ohne Verschieben der Dateien fortfahren? Vorschaubilder werden bei Bedarf am neuen Ort erzeugt. Bibliotheksdaten, Originalfotos und Dateien auf dem bisherigen Laufwerk bleiben unverändert.",
+        "rebuild_confirm": "Fortfahren und neu erzeugen",
+        "section_thumbnail_cache": "Miniaturansichts-Cache",
+        "thumbnail_quality": "Auflösung der Miniaturansichten ändern",
+        "thumbnail_quality_hint": "Höhere Einstellungen sehen schärfer aus, benötigen aber mehr Zeit zur Erstellung und mehr Speicherplatz",
+        "thumbnail_quality_options": [
+          "Niedrig (256 px)",
+          "Standard (512 px)",
+          "Hoch (1024 px)"
+        ],
+        "unavailable": "Cache-Speicherort nicht verfügbar. Verbinden Sie das Laufwerk, bevor Sie den Cache verwenden oder verschieben.",
+        "current_location": "Cache-Speicherort ändern",
+        "counting": "Cache-Dateien werden gezählt…",
+        "finishing": "Cache-Umzug wird abgeschlossen…",
+        "success": "Speicherort des Vorschaubild-Caches geändert",
+        "cleanup_warning": "Der Cache wurde verschoben, aber einige alte Dateien konnten nicht gelöscht werden:",
+        "busy": "Bitte warten Sie, bis der Vorschaubild-Cache verschoben wurde."
+      }
     },
     "database": {
       "title": "Speicher",

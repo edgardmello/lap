@@ -1189,7 +1189,7 @@ fn run_reindex_builtin(
             return Ok(());
         }
         let result = crate::t_cmds::with_current_library(library_id, || {
-            crate::t_sqlite::AFile::generate_embedding_with(&ai_state, file_id, None)
+            crate::t_sqlite::AFile::generate_embedding(&ai_state, file_id)
         });
         match result {
             Ok(_) => done += 1,
@@ -1221,13 +1221,17 @@ fn run_reindex_builtin(
 /// when the cache file is missing — common after cache cleanup or for HEIC /
 /// RAW libraries — and falls back to the original only for formats the
 /// embedding server can decode directly.
-fn image_input_bytes(file_id: i64, file_path: &str, library_id: &str) -> Result<Vec<u8>, String> {
+pub fn image_input_bytes(file_id: i64, file_path: &str, library_id: &str) -> Result<Vec<u8>, String> {
     if let Ok(Some(bytes)) =
         crate::t_sqlite::AThumb::fetch_raw_for_library(file_id, library_id)
     {
         if !bytes.is_empty() {
             return Ok(bytes);
         }
+    }
+    // Reading an online-only original would download it.
+    if !crate::t_utils::content_readable(file_path) {
+        return Err("Skipped: the original is not local".to_string());
     }
     let bytes =
         std::fs::read(file_path).map_err(|e| format!("Failed to read image file: {}", e))?;

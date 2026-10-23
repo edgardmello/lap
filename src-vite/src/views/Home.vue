@@ -73,7 +73,7 @@
             class="absolute top-0 left-[68px] right-0 z-10 h-10 flex items-center"
             data-tauri-drag-region
           >
-            <ContextMenu :menuItems="libraryMenuItems">
+            <ContextMenu :menuItems="getLibraryMenuItems">
               <template #trigger="{ toggle }">
                 <button
                   class="p-2 flex items-center gap-1 border border-base-200 rounded-box text-base-content/70 hover:bg-base-100/30 hover:border-base-100/15 hover:text-base-content cursor-pointer transition-colors"
@@ -188,13 +188,14 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getName } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
+import { applyAlbumAccess, recheckOfflineAlbums } from '@/common/albumRecovery';
 import { config, libConfig } from '@/common/config';
 import { useAppUpdater } from '@/common/updater';
 import { useUIStore } from '@/stores/uiStore';
 import { isWin, isMac, isLinux, SCALE_VALUES } from '@/common/utils';
 import { matchesShortcut, ShortcutPlatform } from '@/common/shortcuts';
 import { SIDEBAR, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT, PANEL_ANIMATION_MS } from '@/common/constants';
-import { getAppConfig, switchLibrary, cancelIndexing, cancelFaceIndex, setImageSearchProvider } from '@/common/api';
+import { getAppConfig, getLibraryVisibleCounts, switchLibrary, cancelIndexing, cancelFaceIndex, setImageSearchProvider } from '@/common/api';
 
 // vue components
 import Library from '@/components/Library.vue';
@@ -411,6 +412,19 @@ watch(() => config.libraryChangedVersion, async () => {
   appConfig.value = await getAppConfig();
 });
 
+const libraryFileCounts = ref<Record<string, number | null>>({});
+let libraryCountsRefreshing = false;
+function getLibraryMenuItems() {
+  if (!libraryCountsRefreshing) {
+    libraryCountsRefreshing = true;
+    void Promise.all((appConfig.value?.libraries || []).filter(lib => !lib.hidden).map(async lib => {
+      const counts = await getLibraryVisibleCounts(lib.id);
+      libraryFileCounts.value[lib.id] = counts?.all ?? null;
+    })).finally(() => { libraryCountsRefreshing = false; });
+  }
+  return libraryMenuItems.value;
+}
+
 const libraryMenuItems = computed(() => {
   const items: any[] = [];
   
@@ -421,6 +435,11 @@ const libraryMenuItems = computed(() => {
       const isSelected = lib.id === appConfig.value.current_library_id;
       items.push({
         label: lib.name,
+        // ContextMenu snapshots items on open; a getter keeps its badge reactive.
+        get count() {
+          const count = libraryFileCounts.value[lib.id];
+          return count === 0 ? undefined : count === null ? '—' : count?.toLocaleString(locale.value) ?? '…';
+        },
         icon: isSelected ? IconDot : null,
         action: () => {
           if (!isSelected) {
@@ -445,16 +464,23 @@ const libraryMenuItems = computed(() => {
 });
 
 let startupFinished = false;
+function handleAccessRecovery() {
+  if (isSwitchingLibrary.value || databaseCorrupted.value !== false) return;
+  void recheckOfflineAlbums();
+}
+
 async function finishStartup() {
   if (startupFinished) return;
   startupFinished = true;
   uiStore.startupReady = true;
   performance.mark('startup-first-content-ready');
-  void invoke('finish_startup', { model: config.settings.imageSearch.model || 0 }).catch(console.error);
-  // Restore the oMLX embedding provider before the first search runs.
+  // Restore the oMLX embedding provider before background initialization, so
+  // the bundled ONNX models are not loaded when oMLX is active. A failed
+  // restore falls back to the built-in provider.
   if (config.settings.imageSearch?.provider === 'omlx') {
-    void setImageSearchProvider('omlx', config.settings.imageSearch.omlx).catch(console.error);
+    await setImageSearchProvider('omlx', config.settings.imageSearch.omlx).catch(console.error);
   }
+  void invoke('finish_startup', { model: config.settings.imageSearch.model || 0 }).catch(console.error);
   if (config.settings.autoCheckUpdates !== false) void checkForUpdates(false);
 }
 watch(databaseCorrupted, corrupted => {
@@ -489,9 +515,17 @@ onMounted(async () => {
     (panelRef.value as any)?.openAlbumEdit?.(albumId);
   });
 
-  unlistenAlbumsRefreshed = await listen('albums-refreshed', () => {
+  unlistenAlbumsRefreshed = await listen('albums-refreshed', async (event: any) => {
+    const libraryId = event.payload?.libraryId || libConfig._libraryId;
+    if (libraryId !== libConfig._libraryId) return;
+    for (const album of event.payload?.albums || []) {
+      if (typeof album.is_accessible === 'boolean') {
+        await applyAlbumAccess(album, album.is_accessible, libraryId);
+      }
+    }
     void checkLibraryEmpty();
   });
+  window.addEventListener('focus', handleAccessRecovery);
 
   try {
     const name = await getName();
@@ -503,6 +537,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('focus', handleAccessRecovery);
   clearLeftPanelAnimationTimer();
   window.removeEventListener('keydown', handleHomeKeyDown);
   document.removeEventListener('mousemove', handleCollectionMouseMove);

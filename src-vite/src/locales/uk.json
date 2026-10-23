@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Спробуйте перемкнутися на іншу бібліотеку."
   },
   "album": {
+    "drop": {
+      "add": "Перетягніть папку, щоб додати",
+      "separate": "Перетягуйте файли та папки окремо.",
+      "confirm_folder": "Виберіть папку: {name}",
+      "folders_only": "Перетягніть папку."
+    },
     "album_list": "Альбоми",
     "search_folders": "Шукати теки",
     "favorite_folders_only": "Лише улюблені теки",
@@ -150,6 +156,7 @@
       "validation_name": "Введіть назву розумного альбому.",
       "validation_rule": "Додайте принаймні одне повне правило.",
       "fields": {
+        "folder_name": "Назва папки",
         "name": "Назва файлу",
         "file_type": "Тип файлу",
         "media_subtype": "Підтип медіа",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Доступний лише в мережі",
+    "cloud_only_pending": "Доступний лише в мережі — відомості про файл неповні",
     "original_unavailable": "Оригінальний файл недоступний",
     "requires_original": "Потрібен оригінальний файл. Підключіть пристрій зберігання знову."
   },
@@ -461,7 +470,8 @@
         "Розмір",
         "Розміри",
         "Тривалість",
-        "Випадково"
+        "Випадково",
+        "Додавання"
       ],
       "similarity": "Подібність",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Можна звільнити",
       "groups_title": "Набори дублікатів",
+      "skipped_cloud_only": "Пропущено файлів, доступних лише в мережі: {count}",
       "actions_title": "Дії",
       "compare": "Порівняти",
       "rescan": "Пересканувати",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Показати у Finder...",
       "reveal_in_file_explorer": "Показати у Провіднику...",
       "refresh_file_info": "Оновити відомості про файл",
+      "index_cloud_files": "Завантажити, проіндексувати та звільнити місце",
       "set_album_cover": "Зробити обкладинкою альбому",
       "set_as": "Задати як",
       "set_desktop_wallpaper": "Зробити шпалерами стільниці",
@@ -1001,7 +1013,10 @@
       "cancelled": "Скасовано",
       "complete": "Завершено",
       "succeeded": "Оновлено: {count}",
-      "failed": "Не вдалося: {count}"
+      "failed": "Не вдалося: {count}",
+      "release_requested": "Запитано звільнення: {count}",
+      "kept_local": "Залишено на цьому пристрої: {count}",
+      "kept_local_hint": "Файли, які завжди зберігаються на цьому пристрої, або файли, для яких Windows не дозволила Lap звільнити місце (контрольований доступ до папок)."
     },
     "image_editor": {
       "title": "Редагувати",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Зменшити",
         "zoom_fit": "Перемкнути фактичний розмір / пасувати до вікна",
         "cycle_background": "Змінити тло",
-        "toggle_slideshow": "Відтворити / призупинити слайд-шоу",
         "open_new_window": "Переглянути в новому вікні",
         "open_external_app": "Відкрити у зовнішньому застосунку",
         "edit_image": "Редагувати",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Видалити назавжди",
         "refresh_file_info": "Оновити відомості про файл",
         "print": "Друк",
-        "toggle_favorite": "Перемкнути улюблене",
-        "set_clear_rating": "Встановити / скинути оцінку",
-        "mark_pick": "Позначити як відібране",
-        "mark_rejected": "Позначити як відхилене",
-        "mark_unreviewed": "Позначити як не переглянуте",
+        "toggle_favorite": "Додати / Вилучити з улюбленого",
+        "toggle_favorite_and_next": "Додати / Вилучити з улюбленого → Далі",
+        "set_clear_rating": "Оцінка",
+        "set_clear_rating_and_next": "Оцінка → Далі",
+        "mark_pick": "Відбір · Відібрані",
+        "mark_pick_and_next": "Відбір · Відібрані → Далі",
+        "mark_rejected": "Відбір · Відхилені",
+        "mark_rejected_and_next": "Відбір · Відхилені → Далі",
+        "mark_unreviewed": "Відбір · Не переглянуті",
+        "mark_unreviewed_and_next": "Відбір · Не переглянуті → Далі",
         "clear_rating": "Скинути оцінку",
         "rate_one": "Оцінити в 1 зірку",
         "rate_two": "Оцінити у 2 зірки",
         "rate_three": "Оцінити у 3 зірки",
         "rate_four": "Оцінити у 4 зірки",
         "rate_five": "Оцінити у 5 зірок",
-        "edit_tags": "Редагувати теги",
-        "edit_collections": "Редагувати добірки",
-        "edit_comment": "Редагувати коментар",
+        "edit_tags": "Теги",
+        "edit_collections": "Добірки",
+        "edit_comment": "Коментар",
         "rotate": "Повернути вигляд (за годинниковою)",
         "rotate_counterclockwise": "Повернути вигляд (проти годинникової)",
         "thumbnail_increase": "Збільшити розмір мініатюри",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Додатково",
-      "section_thumbnail_cache": "Кеш мініатюр",
-      "thumbnail_quality": "Якість мініатюр",
-      "thumbnail_quality_hint": "Задає роздільність створюваних мініатюр. Вищі значення виглядають чіткіше, але створюються довше й займають більше місця на диску",
-      "section_map": "Мапа",
-      "map_provider": "Постачальник мап",
-      "map_provider_hint": "Виберіть сервіс мап для перегляду мапи",
-      "map_provider_options": [
-        "Глобальний (типовий)",
-        "Китай (Tianditu)"
-      ],
-      "tianditu_token": "Ключ API Tianditu",
-      "tianditu_token_hint": "Потрібен для тайлів мапи Tianditu",
-      "tianditu_token_placeholder": "Вставте свій ключ",
-      "tianditu_token_status_saved": "Збережено",
-      "tianditu_token_status_empty": "Не налаштовано",
-      "thumbnail_quality_options": [
-        "Низька (256 px)",
-        "Стандартна (512 px)",
-        "Висока (1024 px)"
-      ],
-      "section_external_apps": "Зовнішні застосунки",
-      "manage_external_apps": "Керувати зовнішніми застосунками",
-      "external_image_editor": "Відкривати фотографію в",
-      "external_video_app": "Відкривати відео в",
-      "external_app_not_selected": "Застосунок не вибрано",
-      "choose_app": "Вибрати",
-      "clear_app": "Очистити",
-      "default_app": "Типовий",
-      "set_default_app": "Зробити типовим",
+      "external_app": {
+        "section_external_apps": "Зовнішні застосунки",
+        "manage_external_apps": "Керувати зовнішніми застосунками",
+        "external_image_editor": "Відкривати фотографію в",
+        "external_video_app": "Відкривати відео в",
+        "external_app_not_selected": "Застосунок не вибрано",
+        "choose_app": "Вибрати",
+        "clear_app": "Очистити",
+        "default_app": "Типовий",
+        "set_default_app": "Зробити типовим"
+      },
       "section_diagnostics": "Діагностика",
-      "debug_mode": "Режим налагодження"
+      "debug_mode": "Режим налагодження",
+      "map": {
+        "section_map": "Мапа",
+        "map_provider": "Постачальник мап",
+        "map_provider_hint": "Виберіть сервіс мап для перегляду мапи",
+        "map_provider_options": [
+          "Глобальний (типовий)",
+          "Китай (Tianditu)"
+        ],
+        "tianditu_token": "Ключ API Tianditu",
+        "tianditu_token_hint": "Потрібен для тайлів мапи Tianditu",
+        "tianditu_token_placeholder": "Вставте свій ключ",
+        "tianditu_token_status_saved": "Збережено",
+        "tianditu_token_status_empty": "Не налаштовано"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Відкат змін…",
+        "cancelled": "Скасовано. Початковий кеш збережено.",
+        "new_location": "Нове розташування: {path}",
+        "migrating": "Переміщення мініатюр…",
+        "migration_hint": "Мініатюри всіх бібліотек буде переміщено. Нове розташування набуде чинності лише після успішного завершення міграції. Скасування збереже поточне розташування кешу.",
+        "migration_progress": "Перебіг міграції",
+        "ready": "Готово до міграції",
+        "start": "Почати",
+        "cancelling": "Скасування…",
+        "rebuild_message": "Попередня папка кешу недоступна. Продовжити без перенесення файлів? Мініатюри створюватимуться в новій папці за потреби. Дані бібліотек, оригінальні фотографії та файли на попередньому диску не зміняться.",
+        "rebuild_confirm": "Продовжити й створити заново",
+        "section_thumbnail_cache": "Кеш мініатюр",
+        "thumbnail_quality": "Змінити роздільність мініатюр",
+        "thumbnail_quality_hint": "Вищі значення виглядають чіткіше, але створюються довше й займають більше місця на диску",
+        "thumbnail_quality_options": [
+          "Низька (256 px)",
+          "Стандартна (512 px)",
+          "Висока (1024 px)"
+        ],
+        "unavailable": "Папка кешу недоступна. Підключіть диск перед використанням або перенесенням кешу.",
+        "current_location": "Змінити розташування кешу",
+        "counting": "Підрахунок файлів кешу…",
+        "finishing": "Завершення перенесення кешу…",
+        "success": "Розташування кешу мініатюр змінено",
+        "cleanup_warning": "Кеш переміщено, але деякі старі файли не вдалося видалити:",
+        "busy": "Дочекайтеся завершення перенесення кешу мініатюр."
+      }
     },
     "database": {
       "title": "Зберігання",

@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Попробуйте переключиться на другую библиотеку."
   },
   "album": {
+    "drop": {
+      "add": "Перетащите папку, чтобы добавить",
+      "separate": "Перетаскивайте файлы и папки отдельно.",
+      "confirm_folder": "Выберите папку: {name}",
+      "folders_only": "Перетащите папку."
+    },
     "album_list": "Альбомы",
     "search_folders": "Поиск папок",
     "favorite_folders_only": "Только избранные папки",
@@ -150,6 +156,7 @@
       "validation_name": "Введите название смарт-альбома.",
       "validation_rule": "Добавьте хотя бы одно полное правило.",
       "fields": {
+        "folder_name": "Имя папки",
         "name": "Имя файла",
         "file_type": "Тип файла",
         "media_subtype": "Подтип медиа",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Доступен только в сети",
+    "cloud_only_pending": "Доступен только в сети — сведения о файле неполные",
     "original_unavailable": "Исходный файл недоступен",
     "requires_original": "Требуется исходный файл. Подключите устройство хранения заново."
   },
@@ -461,7 +470,8 @@
         "Размер",
         "Измерение",
         "Длительность",
-        "Случайно"
+        "Случайно",
+        "Добавление"
       ],
       "similarity": "Сходство",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Освободить",
       "groups_title": "Группы дубликатов",
+      "skipped_cloud_only": "Пропущено файлов, доступных только в сети: {count}",
       "actions_title": "Действия",
       "compare": "Сравнить",
       "rescan": "Пересканировать",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Показать в Finder...",
       "reveal_in_file_explorer": "Показать в Проводнике...",
       "refresh_file_info": "Обновить сведения о файле",
+      "index_cloud_files": "Скачать, проиндексировать и освободить место",
       "set_album_cover": "Сделать обложкой",
       "set_as": "Установить как",
       "set_desktop_wallpaper": "Сделать обоями рабочего стола",
@@ -1001,7 +1013,10 @@
       "cancelled": "Отменено",
       "complete": "Завершено",
       "succeeded": "Обновлено: {count}",
-      "failed": "Ошибок: {count}"
+      "failed": "Ошибок: {count}",
+      "release_requested": "Запрошено освобождение: {count}",
+      "kept_local": "Оставлено на этом устройстве: {count}",
+      "kept_local_hint": "Файлы, которые всегда хранятся на этом устройстве, или файлы, для которых Windows не разрешила Lap освободить место (контролируемый доступ к папкам)."
     },
     "image_editor": {
       "title": "Редактировать",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Уменьшить",
         "zoom_fit": "Реальный размер / по размеру окна",
         "cycle_background": "Переключить фон",
-        "toggle_slideshow": "Пуск/пауза слайд-шоу",
         "open_new_window": "Показать в новом окне",
         "open_external_app": "Открыть во внешнем приложении",
         "edit_image": "Редактировать",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Удалить безвозвратно",
         "refresh_file_info": "Обновить информацию о файле",
         "print": "Печать",
-        "toggle_favorite": "Добавить в избранное",
-        "set_clear_rating": "Установить/сбросить оценку",
-        "mark_pick": "Пометить как отобранное",
-        "mark_rejected": "Пометить как отклонённое",
-        "mark_unreviewed": "Пометить как непросмотренное",
+        "toggle_favorite": "Добавить / Удалить из избранного",
+        "toggle_favorite_and_next": "Добавить / Удалить из избранного → Далее",
+        "set_clear_rating": "Оценка",
+        "set_clear_rating_and_next": "Оценка → Далее",
+        "mark_pick": "Отбор · Отобранные",
+        "mark_pick_and_next": "Отбор · Отобранные → Далее",
+        "mark_rejected": "Отбор · Отклонённые",
+        "mark_rejected_and_next": "Отбор · Отклонённые → Далее",
+        "mark_unreviewed": "Отбор · Непросмотренные",
+        "mark_unreviewed_and_next": "Отбор · Непросмотренные → Далее",
         "clear_rating": "Сбросить оценку",
         "rate_one": "Оценить на 1 звезду",
         "rate_two": "Оценить на 2 звезды",
         "rate_three": "Оценить на 3 звезды",
         "rate_four": "Оценить на 4 звезды",
         "rate_five": "Оценить на 5 звёзд",
-        "edit_tags": "Редактировать теги",
-        "edit_collections": "Изменить коллекции",
-        "edit_comment": "Редактировать комментарий",
+        "edit_tags": "Теги",
+        "edit_collections": "Коллекции",
+        "edit_comment": "Комментарий",
         "rotate": "Повернуть по часовой стрелке",
         "rotate_counterclockwise": "Повернуть против часовой стрелки",
         "thumbnail_increase": "Увеличить миниатюры",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Дополнительно",
-      "section_thumbnail_cache": "Кэш миниатюр",
-      "thumbnail_quality": "Качество миниатюр",
-      "thumbnail_quality_hint": "Разрешение создаваемых миниатюр (чем выше, тем они чётче, но создаются дольше и занимают больше места на диске)",
-      "section_map": "Карта",
-      "map_provider": "Поставщик карт",
-      "map_provider_hint": "Выберите картографический сервис для просмотра карты",
-      "map_provider_options": [
-        "Глобальный (по умолчанию)",
-        "Китай (Tianditu)"
-      ],
-      "tianditu_token": "Токен API Tianditu",
-      "tianditu_token_hint": "Требуется для тайлов Tianditu",
-      "tianditu_token_placeholder": "Вставьте токен",
-      "tianditu_token_status_saved": "Сохранено",
-      "tianditu_token_status_empty": "Не настроено",
-      "thumbnail_quality_options": [
-        "Низкое (256 пкс)",
-        "Стандартное (512 пкс)",
-        "Высокое (1024 пкс)"
-      ],
-      "section_external_apps": "Внешние приложения",
-      "manage_external_apps": "Управление внешними приложениями",
-      "external_image_editor": "Открыть фото с помощью",
-      "external_video_app": "Открыть видео с помощью",
-      "external_app_not_selected": "Не выбрано приложение",
-      "choose_app": "Выбрать",
-      "clear_app": "Очистить",
-      "default_app": "По умолчанию",
-      "set_default_app": "Сделать стандартным",
+      "external_app": {
+        "section_external_apps": "Внешние приложения",
+        "manage_external_apps": "Управление внешними приложениями",
+        "external_image_editor": "Открыть фото с помощью",
+        "external_video_app": "Открыть видео с помощью",
+        "external_app_not_selected": "Не выбрано приложение",
+        "choose_app": "Выбрать",
+        "clear_app": "Очистить",
+        "default_app": "По умолчанию",
+        "set_default_app": "Сделать стандартным"
+      },
       "section_diagnostics": "Диагностика",
-      "debug_mode": "Режим отладки"
+      "debug_mode": "Режим отладки",
+      "map": {
+        "section_map": "Карта",
+        "map_provider": "Поставщик карт",
+        "map_provider_hint": "Выберите картографический сервис для просмотра карты",
+        "map_provider_options": [
+          "Глобальный (по умолчанию)",
+          "Китай (Tianditu)"
+        ],
+        "tianditu_token": "Токен API Tianditu",
+        "tianditu_token_hint": "Требуется для тайлов Tianditu",
+        "tianditu_token_placeholder": "Вставьте токен",
+        "tianditu_token_status_saved": "Сохранено",
+        "tianditu_token_status_empty": "Не настроено"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Откат изменений…",
+        "cancelled": "Отменено. Исходный кэш сохранён.",
+        "new_location": "Новое расположение: {path}",
+        "migrating": "Перенос миниатюр…",
+        "migration_hint": "Миниатюры всех библиотек будут перемещены. Новое расположение вступит в силу только после успешного завершения миграции. При отмене сохранится текущее расположение кэша.",
+        "migration_progress": "Ход миграции",
+        "ready": "Готово к миграции",
+        "start": "Начать",
+        "cancelling": "Отмена…",
+        "rebuild_message": "Прежняя папка кэша недоступна. Продолжить без переноса файлов? Миниатюры будут создаваться заново в новой папке по мере необходимости. Данные библиотек, исходные фотографии и файлы на прежнем диске не изменятся.",
+        "rebuild_confirm": "Продолжить и создать заново",
+        "section_thumbnail_cache": "Кэш миниатюр",
+        "thumbnail_quality": "Изменить разрешение миниатюр",
+        "thumbnail_quality_hint": "При более высоком разрешении миниатюры чётче, но создаются дольше и занимают больше места на диске",
+        "thumbnail_quality_options": [
+          "Низкое (256 пкс)",
+          "Стандартное (512 пкс)",
+          "Высокое (1024 пкс)"
+        ],
+        "unavailable": "Папка кэша недоступна. Подключите диск перед использованием или переносом кэша.",
+        "current_location": "Изменить расположение кэша",
+        "counting": "Подсчёт файлов кэша…",
+        "finishing": "Завершение переноса кэша…",
+        "success": "Расположение кэша миниатюр изменено",
+        "cleanup_warning": "Кэш перемещён, но некоторые старые файлы не удалось удалить:",
+        "busy": "Дождитесь завершения переноса кэша миниатюр."
+      }
     },
     "database": {
       "title": "Хранилище",

@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Veuillez essayer de passer à une autre bibliothèque."
   },
   "album": {
+    "drop": {
+      "add": "Glissez un dossier pour l’ajouter",
+      "separate": "Glissez les fichiers et les dossiers séparément.",
+      "confirm_folder": "Choisir le dossier : {name}",
+      "folders_only": "Veuillez glisser un dossier."
+    },
     "album_list": "Albums",
     "search_folders": "Rechercher des dossiers",
     "favorite_folders_only": "Dossiers favoris uniquement",
@@ -150,6 +156,7 @@
       "validation_name": "Saisissez un nom d’album intelligent.",
       "validation_rule": "Ajoutez au moins une règle complète.",
       "fields": {
+        "folder_name": "Nom du dossier",
         "name": "Nom du fichier",
         "file_type": "Type de fichier",
         "media_subtype": "Sous-type de média",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Disponible uniquement en ligne",
+    "cloud_only_pending": "Disponible uniquement en ligne — informations incomplètes",
     "original_unavailable": "Le fichier original est indisponible",
     "requires_original": "Nécessite le fichier original. Reconnectez le périphérique de stockage."
   },
@@ -461,7 +470,8 @@
         "Taille",
         "Dimension",
         "Durée",
-        "Aléatoire"
+        "Aléatoire",
+        "Ajout"
       ],
       "similarity": "Similarité",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Récupérable",
       "groups_title": "Groupes de doublons",
+      "skipped_cloud_only": "{count} fichiers disponibles uniquement en ligne ignorés",
       "actions_title": "Actions",
       "compare": "Comparer",
       "rescan": "Relancer l’analyse",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Afficher dans le Finder...",
       "reveal_in_file_explorer": "Afficher dans l'Explorateur...",
       "refresh_file_info": "Actualiser les informations du fichier",
+      "index_cloud_files": "Télécharger, indexer puis libérer de l'espace",
       "set_album_cover": "Définir comme couverture",
       "set_as": "Définir comme",
       "set_desktop_wallpaper": "Définir comme fond d'écran",
@@ -1001,7 +1013,10 @@
       "cancelled": "Annulé",
       "complete": "Terminé",
       "succeeded": "Actualisés : {count}",
-      "failed": "Échecs : {count}"
+      "failed": "Échecs : {count}",
+      "release_requested": "Libération demandée : {count}",
+      "kept_local": "Restés sur cet appareil : {count}",
+      "kept_local_hint": "Fichiers que vous gardez sur cet appareil, ou que Windows n'a pas laissé Lap libérer (Accès contrôlé aux dossiers)."
     },
     "image_editor": {
       "title": "Modifier",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Zoom arrière",
         "zoom_fit": "Taille réelle / Ajuster à la fenêtre",
         "cycle_background": "Changer d’arrière-plan",
-        "toggle_slideshow": "Lire / Mettre en pause le diaporama",
         "open_new_window": "Détacher la fenêtre",
         "open_external_app": "Ouvrir dans une app externe",
         "edit_image": "Modifier",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Supprimer définitivement",
         "refresh_file_info": "Actualiser les informations du fichier",
         "print": "Imprimer",
-        "toggle_favorite": "Basculer le favori",
-        "set_clear_rating": "Définir / effacer la note",
-        "mark_pick": "Marquer comme sélectionnée",
-        "mark_rejected": "Marquer comme rejetée",
-        "mark_unreviewed": "Marquer comme non examinée",
+        "toggle_favorite": "Ajouter / Retirer des favoris",
+        "toggle_favorite_and_next": "Ajouter / Retirer des favoris → Suivant",
+        "set_clear_rating": "Note",
+        "set_clear_rating_and_next": "Note → Suivant",
+        "mark_pick": "Sélection · Sélectionnées",
+        "mark_pick_and_next": "Sélection · Sélectionnées → Suivant",
+        "mark_rejected": "Sélection · Rejetées",
+        "mark_rejected_and_next": "Sélection · Rejetées → Suivant",
+        "mark_unreviewed": "Sélection · Non examinées",
+        "mark_unreviewed_and_next": "Sélection · Non examinées → Suivant",
         "clear_rating": "Effacer la note",
         "rate_one": "Noter 1 étoile",
         "rate_two": "Noter 2 étoiles",
         "rate_three": "Noter 3 étoiles",
         "rate_four": "Noter 4 étoiles",
         "rate_five": "Noter 5 étoiles",
-        "edit_tags": "Modifier les étiquettes",
-        "edit_collections": "Modifier les collections",
-        "edit_comment": "Modifier le commentaire",
+        "edit_tags": "Étiquettes",
+        "edit_collections": "Collections",
+        "edit_comment": "Commentaire",
         "rotate": "Pivoter la vue dans le sens horaire",
         "rotate_counterclockwise": "Pivoter la vue dans le sens antihoraire",
         "thumbnail_increase": "Agrandir les miniatures",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Avancé",
-      "section_thumbnail_cache": "Cache des miniatures",
-      "thumbnail_quality": "Qualité des miniatures",
-      "thumbnail_quality_hint": "Définit la résolution des miniatures générées. Des réglages plus élevés offrent un aperçu plus net, mais nécessitent plus de temps de génération et d’espace disque",
-      "section_map": "Carte",
-      "map_provider": "Fournisseur de cartes",
-      "map_provider_hint": "Choisissez le service de cartes pour la vue Carte",
-      "map_provider_options": [
-        "Global (par défaut)",
-        "Chine (Tianditu)"
-      ],
-      "tianditu_token": "Jeton API Tianditu",
-      "tianditu_token_hint": "Requis pour les tuiles Tianditu",
-      "tianditu_token_placeholder": "Collez votre jeton",
-      "tianditu_token_status_saved": "Enregistré",
-      "tianditu_token_status_empty": "Non configuré",
-      "thumbnail_quality_options": [
-        "Faible (256 px)",
-        "Standard (512 px)",
-        "Élevée (1024 px)"
-      ],
-      "section_external_apps": "Applications externes",
-      "manage_external_apps": "Gérer les applications externes",
-      "external_image_editor": "Ouvrir la photo avec",
-      "external_video_app": "Ouvrir la vidéo avec",
-      "external_app_not_selected": "Aucune app selectionnee",
-      "choose_app": "Choisir",
-      "clear_app": "Effacer",
-      "default_app": "Par défaut",
-      "set_default_app": "Définir par défaut",
+      "external_app": {
+        "section_external_apps": "Applications externes",
+        "manage_external_apps": "Gérer les applications externes",
+        "external_image_editor": "Ouvrir la photo avec",
+        "external_video_app": "Ouvrir la vidéo avec",
+        "external_app_not_selected": "Aucune app selectionnee",
+        "choose_app": "Choisir",
+        "clear_app": "Effacer",
+        "default_app": "Par défaut",
+        "set_default_app": "Définir par défaut"
+      },
       "section_diagnostics": "Diagnostics",
-      "debug_mode": "Mode débogage"
+      "debug_mode": "Mode débogage",
+      "map": {
+        "section_map": "Carte",
+        "map_provider": "Fournisseur de cartes",
+        "map_provider_hint": "Choisissez le service de cartes pour la vue Carte",
+        "map_provider_options": [
+          "Global (par défaut)",
+          "Chine (Tianditu)"
+        ],
+        "tianditu_token": "Jeton API Tianditu",
+        "tianditu_token_hint": "Requis pour les tuiles Tianditu",
+        "tianditu_token_placeholder": "Collez votre jeton",
+        "tianditu_token_status_saved": "Enregistré",
+        "tianditu_token_status_empty": "Non configuré"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Restauration en cours…",
+        "cancelled": "Annulé. Le cache d’origine est conservé.",
+        "new_location": "Nouvel emplacement : {path}",
+        "migrating": "Migration des miniatures…",
+        "migration_hint": "Les miniatures de toutes les bibliothèques seront déplacées. Le nouvel emplacement ne sera utilisé qu’après la réussite de la migration. L’annulation conserve l’emplacement actuel.",
+        "migration_progress": "Progression de la migration",
+        "ready": "Prêt pour la migration",
+        "start": "Démarrer",
+        "cancelling": "Annulation en cours…",
+        "rebuild_message": "L’ancien emplacement du cache est indisponible. Continuer sans déplacer ses fichiers ? Les miniatures seront régénérées au besoin au nouvel emplacement. Les données des bibliothèques, les photos originales et les fichiers de l’ancien disque resteront inchangés.",
+        "rebuild_confirm": "Continuer et régénérer",
+        "section_thumbnail_cache": "Cache des miniatures",
+        "thumbnail_quality": "Modifier la résolution des miniatures",
+        "thumbnail_quality_hint": "Des réglages plus élevés offrent un aperçu plus net, mais nécessitent plus de temps de génération et d’espace disque",
+        "thumbnail_quality_options": [
+          "Faible (256 px)",
+          "Standard (512 px)",
+          "Élevée (1024 px)"
+        ],
+        "unavailable": "Emplacement du cache indisponible. Reconnectez le disque avant d’utiliser ou de déplacer ce cache.",
+        "current_location": "Changer l’emplacement du cache",
+        "counting": "Comptage des fichiers du cache…",
+        "finishing": "Finalisation du déplacement…",
+        "success": "L’emplacement du cache des miniatures a été modifié",
+        "cleanup_warning": "Le cache a été déplacé, mais certains anciens fichiers n’ont pas pu être supprimés :",
+        "busy": "Veuillez attendre la fin du déplacement du cache des miniatures."
+      }
     },
     "database": {
       "title": "Stockage",

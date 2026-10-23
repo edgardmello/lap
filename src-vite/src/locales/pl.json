@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Spróbuj przełączyć się na inną bibliotekę."
   },
   "album": {
+    "drop": {
+      "add": "Przeciągnij folder, aby go dodać",
+      "separate": "Przeciągaj pliki i foldery osobno.",
+      "confirm_folder": "Wybierz folder: {name}",
+      "folders_only": "Przeciągnij folder."
+    },
     "album_list": "Albumy",
     "search_folders": "Szukaj folderów",
     "favorite_folders_only": "Tylko ulubione foldery",
@@ -150,6 +156,7 @@
       "validation_name": "Wprowadź nazwę inteligentnego albumu.",
       "validation_rule": "Dodaj co najmniej jedną kompletną regułę.",
       "fields": {
+        "folder_name": "Nazwa folderu",
         "name": "Nazwa pliku",
         "file_type": "Typ pliku",
         "media_subtype": "Podtyp multimediów",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Dostępny tylko online",
+    "cloud_only_pending": "Dostępny tylko online — niepełne informacje o pliku",
     "original_unavailable": "Oryginalny plik jest niedostępny",
     "requires_original": "Wymaga oryginalnego pliku. Podłącz ponownie urządzenie pamięci masowej."
   },
@@ -461,7 +470,8 @@
         "Rozmiar",
         "Wymiary",
         "Czas trwania",
-        "Losowo"
+        "Losowo",
+        "Dodanie"
       ],
       "similarity": "Podobieństwo",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Do odzyskania",
       "groups_title": "Zbiory duplikatów",
+      "skipped_cloud_only": "Pominięto pliki dostępne tylko online: {count}",
       "actions_title": "Akcje",
       "compare": "Porównaj",
       "rescan": "Skanuj ponownie",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Pokaż w Finderze...",
       "reveal_in_file_explorer": "Pokaż w Eksploratorze plików...",
       "refresh_file_info": "Odśwież informacje o pliku",
+      "index_cloud_files": "Pobierz, zindeksuj i zwolnij miejsce",
       "set_album_cover": "Ustaw jako okładkę albumu",
       "set_as": "Ustaw jako",
       "set_desktop_wallpaper": "Ustaw jako tapetę pulpitu",
@@ -1001,7 +1013,10 @@
       "cancelled": "Anulowano",
       "complete": "Ukończono",
       "succeeded": "Zaktualizowano: {count}",
-      "failed": "Błędy: {count}"
+      "failed": "Błędy: {count}",
+      "release_requested": "Zażądano zwolnienia miejsca: {count}",
+      "kept_local": "Zachowano na tym urządzeniu: {count}",
+      "kept_local_hint": "Pliki, które mają zawsze pozostawać na tym urządzeniu lub dla których Windows nie zezwolił aplikacji Lap na zwolnienie miejsca (kontrolowany dostęp do folderów)."
     },
     "image_editor": {
       "title": "Edycja",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Pomniejsz",
         "zoom_fit": "Przełącz rzeczywisty rozmiar / dopasowanie do okna",
         "cycle_background": "Zmień tło",
-        "toggle_slideshow": "Odtwórz / wstrzymaj pokaz slajdów",
         "open_new_window": "Otwórz w nowym oknie",
         "open_external_app": "Otwórz w aplikacji zewnętrznej",
         "edit_image": "Edytuj",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Usuń trwale",
         "refresh_file_info": "Odśwież informacje o pliku",
         "print": "Drukuj",
-        "toggle_favorite": "Przełącz ulubione",
-        "set_clear_rating": "Ustaw / wyczyść ocenę",
-        "mark_pick": "Oznacz jako wybrane",
-        "mark_rejected": "Oznacz jako odrzucone",
-        "mark_unreviewed": "Oznacz jako niesprawdzone",
+        "toggle_favorite": "Dodaj / Usuń z ulubionych",
+        "toggle_favorite_and_next": "Dodaj / Usuń z ulubionych → Dalej",
+        "set_clear_rating": "Ocena",
+        "set_clear_rating_and_next": "Ocena → Dalej",
+        "mark_pick": "Selekcja · Wybrane",
+        "mark_pick_and_next": "Selekcja · Wybrane → Dalej",
+        "mark_rejected": "Selekcja · Odrzucone",
+        "mark_rejected_and_next": "Selekcja · Odrzucone → Dalej",
+        "mark_unreviewed": "Selekcja · Niesprawdzone",
+        "mark_unreviewed_and_next": "Selekcja · Niesprawdzone → Dalej",
         "clear_rating": "Wyczyść ocenę",
         "rate_one": "Oceń na 1 gwiazdkę",
         "rate_two": "Oceń na 2 gwiazdki",
         "rate_three": "Oceń na 3 gwiazdki",
         "rate_four": "Oceń na 4 gwiazdki",
         "rate_five": "Oceń na 5 gwiazdek",
-        "edit_tags": "Edytuj tagi",
-        "edit_collections": "Edytuj kolekcje",
-        "edit_comment": "Edytuj komentarz",
+        "edit_tags": "Tagi",
+        "edit_collections": "Kolekcje",
+        "edit_comment": "Komentarz",
         "rotate": "Obróć widok (zgodnie ze wskazówkami zegara)",
         "rotate_counterclockwise": "Obróć widok (przeciwnie do wskazówek zegara)",
         "thumbnail_increase": "Zwiększ rozmiar miniatur",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Zaawansowane",
-      "section_thumbnail_cache": "Cache miniatur",
-      "thumbnail_quality": "Jakość miniatur",
-      "thumbnail_quality_hint": "Ustawia rozdzielczość generowanych miniatur. Wyższe ustawienia wyglądają ostrzej, ale generowanie trwa dłużej i zajmuje więcej miejsca na dysku",
-      "section_map": "Mapa",
-      "map_provider": "Dostawca map",
-      "map_provider_hint": "Wybierz usługę mapową dla widoku mapy",
-      "map_provider_options": [
-        "Globalny (domyślny)",
-        "Chiny (Tianditu)"
-      ],
-      "tianditu_token": "Token API Tianditu",
-      "tianditu_token_hint": "Wymagany dla kafelków map Tianditu",
-      "tianditu_token_placeholder": "Wklej swój token",
-      "tianditu_token_status_saved": "Zapisano",
-      "tianditu_token_status_empty": "Nieskonfigurowany",
-      "thumbnail_quality_options": [
-        "Niska (256 px)",
-        "Standardowa (512 px)",
-        "Wysoka (1024 px)"
-      ],
-      "section_external_apps": "Aplikacje zewnętrzne",
-      "manage_external_apps": "Zarządzaj aplikacjami zewnętrznymi",
-      "external_image_editor": "Otwieraj zdjęcia w",
-      "external_video_app": "Otwieraj filmy w",
-      "external_app_not_selected": "Nie wybrano aplikacji",
-      "choose_app": "Wybierz",
-      "clear_app": "Wyczyść",
-      "default_app": "Domyślna",
-      "set_default_app": "Ustaw jako domyślną",
+      "external_app": {
+        "section_external_apps": "Aplikacje zewnętrzne",
+        "manage_external_apps": "Zarządzaj aplikacjami zewnętrznymi",
+        "external_image_editor": "Otwieraj zdjęcia w",
+        "external_video_app": "Otwieraj filmy w",
+        "external_app_not_selected": "Nie wybrano aplikacji",
+        "choose_app": "Wybierz",
+        "clear_app": "Wyczyść",
+        "default_app": "Domyślna",
+        "set_default_app": "Ustaw jako domyślną"
+      },
       "section_diagnostics": "Diagnostyka",
-      "debug_mode": "Tryb debugowania"
+      "debug_mode": "Tryb debugowania",
+      "map": {
+        "section_map": "Mapa",
+        "map_provider": "Dostawca map",
+        "map_provider_hint": "Wybierz usługę mapową dla widoku mapy",
+        "map_provider_options": [
+          "Globalny (domyślny)",
+          "Chiny (Tianditu)"
+        ],
+        "tianditu_token": "Token API Tianditu",
+        "tianditu_token_hint": "Wymagany dla kafelków map Tianditu",
+        "tianditu_token_placeholder": "Wklej swój token",
+        "tianditu_token_status_saved": "Zapisano",
+        "tianditu_token_status_empty": "Nieskonfigurowany"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Wycofywanie zmian…",
+        "cancelled": "Anulowano. Oryginalna pamięć podręczna została zachowana.",
+        "new_location": "Nowa lokalizacja: {path}",
+        "migrating": "Przenoszenie miniatur…",
+        "migration_hint": "Miniatury wszystkich bibliotek zostaną przeniesione. Nowa lokalizacja zacznie działać dopiero po zakończeniu migracji. Anulowanie zachowa obecną lokalizację pamięci podręcznej.",
+        "migration_progress": "Postęp migracji",
+        "ready": "Gotowe do migracji",
+        "start": "Rozpocznij",
+        "cancelling": "Anulowanie…",
+        "rebuild_message": "Poprzednia lokalizacja pamięci podręcznej jest niedostępna. Kontynuować bez przenoszenia plików? Miniatury będą tworzone w nowej lokalizacji w razie potrzeby. Dane bibliotek, oryginalne zdjęcia i pliki na poprzednim dysku pozostaną bez zmian.",
+        "rebuild_confirm": "Kontynuuj i utwórz ponownie",
+        "section_thumbnail_cache": "Cache miniatur",
+        "thumbnail_quality": "Zmień rozdzielczość miniatur",
+        "thumbnail_quality_hint": "Wyższe ustawienia wyglądają ostrzej, ale generowanie trwa dłużej i zajmuje więcej miejsca na dysku",
+        "thumbnail_quality_options": [
+          "Niska (256 px)",
+          "Standardowa (512 px)",
+          "Wysoka (1024 px)"
+        ],
+        "unavailable": "Lokalizacja pamięci podręcznej jest niedostępna. Podłącz dysk przed jej użyciem lub przeniesieniem.",
+        "current_location": "Zmień lokalizację pamięci podręcznej",
+        "counting": "Liczenie plików pamięci podręcznej…",
+        "finishing": "Kończenie przenoszenia…",
+        "success": "Zmieniono lokalizację pamięci podręcznej miniatur",
+        "cleanup_warning": "Pliki przeniesiono, ale nie udało się usunąć niektórych starych plików:",
+        "busy": "Poczekaj na zakończenie przenoszenia pamięci podręcznej miniatur."
+      }
     },
     "database": {
       "title": "Przechowywanie",

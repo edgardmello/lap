@@ -35,8 +35,8 @@ test('offline state does not remove catalog data and follows reconnection, indiv
 const source = fs.readFileSync(new URL('../src/common/fileMenu.ts', import.meta.url), 'utf8');
 const iconNames = source.match(/import \{([^}]+)\} from '@\/common\/icons'/)[1].split(',').map(s => s.trim()).filter(Boolean);
 const config = { main: { sidebarIndex: 1 }, settings: { face: { enabled: true } }, externalAppsFor: () => [{ id: 'editor', name: 'Editor' }], defaultExternalApp: () => null };
-const useFileMenuItems = new Function('computed', 'markRaw', 'config', 'libConfig', 'SIDEBAR', 'DEFAULT_PLATFORM', 'getShortcutLabel', 'isOriginalUnavailable', 'requiresOriginalAction', ...iconNames, moduleBody('../src/common/fileMenu.ts') + '; return useFileMenuItems;')(
-  computed, markRaw, config, libConfig, { ALBUM: 1 }, '', () => '', isOriginalUnavailable, requiresOriginalAction, ...iconNames.map(() => ({})),
+const useFileMenuItems = new Function('computed', 'markRaw', 'config', 'libConfig', 'SIDEBAR', 'DEFAULT_PLATFORM', 'getShortcutLabel', 'isOriginalUnavailable', 'requiresOriginalAction', 'isWin', ...iconNames, moduleBody('../src/common/fileMenu.ts') + '; return useFileMenuItems;')(
+  computed, markRaw, config, libConfig, { ALBUM: 1 }, '', () => '', isOriginalUnavailable, requiresOriginalAction, true, ...iconNames.map(() => ({})),
 );
 const words = () => new Proxy({}, { get: (_, key) => String(key) });
 const locale = ref({ menu: { file: words(), meta: words() }, rating: words(), culling: words() });
@@ -347,13 +347,21 @@ test('album selection refresh is not duplicated by the accessibility event', () 
   const start = contentSource.indexOf('(event: any) => {', contentSource.indexOf("listen('album-accessibility-changed'"));
   const handler = contentSource.slice(start, contentSource.indexOf('\n  });', start));
   let refreshes = 0;
-  const onAccess = new Function('libConfig', 'updateContent', ts.transpile('const handler = ' + handler, { target: ts.ScriptTarget.ES2022 }) + '; return handler;')(libConfig, () => refreshes++);
+  const deps = { libConfig, config, SIDEBAR: { ALBUM: 1 }, selectedItemIndex: ref(7),
+    gridViewRef: ref({ getScrollTop: () => 320 }), pendingRestoreScrollTop: ref(null),
+    updateContent: () => refreshes++ };
+  const onAccess = new Function(...Object.keys(deps),
+    'let pendingInitialSelectedIndex = -1; let hasRestoredInitialSelection = true; ' +
+    ts.transpile('const handler = ' + handler, { target: ts.ScriptTarget.ES2022 }) + '; return handler;')(...Object.values(deps));
   onAccess({ payload: { libraryId: libConfig._libraryId, selectionChanged: true } });
   assert.equal(refreshes, 0);
   onAccess({ payload: { libraryId: libConfig._libraryId, selectionChanged: false } });
   assert.equal(refreshes, 1);
   onAccess({ payload: { libraryId: 'other-library', selectionChanged: false } });
   assert.equal(refreshes, 1);
+  assert.equal(deps.pendingRestoreScrollTop.value, 320);
+  onAccess({ payload: { libraryId: libConfig._libraryId, albumId: 2, selectionChanged: false } });
+  assert.equal(refreshes, 1, 'recovering another album must not refresh the selected album');
 });
 
 test('oversized drag selection skips native preview and hydration while keeping internal dragging', () => {
@@ -364,4 +372,55 @@ test('oversized drag selection skips native preview and hydration while keeping 
   assert.equal(fixture.calls.hydrated, 0);
   assert.equal(fixture.calls.started, 1);
   assert.equal(fixture.deps.isContentInternalDrag.value, true);
+});
+
+
+test('cloud indexing menu falls back to English when the locale has no new label', () => {
+  const menu = useFileMenuItems(ref(null), ref({ menu: { file: {}, meta: {} } }), true, key => key, () => {}, {
+    selectMode: ref(true), selectionCount: ref(1), selectionHasCloudOnly: ref(true),
+  });
+  assert.equal(action(menu.value, 'index-cloud-files').label, 'Download, index, then free up space');
+  assert.equal(action(menu.value, 'index-cloud-files').disabled, false);
+});
+
+const warmupBody = ts.transpile(imageSource.slice(imageSource.indexOf('let warmImageRequest ='), imageSource.indexOf('function clearStalePreloadEntries')), { target: ts.ScriptTarget.ES2022 });
+function warmupFixture(checkCloud) {
+  const props = { filePath: '/current.jpg', nextFilePath: '/next.jpg', fileType: 1 };
+  const scheduled = new Map();
+  const reads = [];
+  const fixture = new Function('props', 'isCloudOnlyFile', 'loadImageResource', 'shouldUseBackendPreview', 'setTimeout', 'clearTimeout', 'queueMicrotask', `
+    let warmImageTimeout = null;
+    let warmImageIdleId = null;
+    ${warmupBody}
+    return { warmImage, cancelWarmImageScheduling };
+  `)(props, checkCloud, async path => reads.push(path), () => false,
+    callback => { scheduled.set(1, callback); return 1; }, id => scheduled.delete(id), callback => callback());
+  return { ...fixture, props, reads, flush: async () => {
+    const callbacks = [...scheduled.values()]; scheduled.clear();
+    for (const callback of callbacks) callback();
+    await new Promise(resolve => setImmediate(resolve));
+  } };
+}
+
+test('neighbor warmup reads local files but never reads cloud-only originals', async () => {
+  for (const cloud of [true, false]) {
+    const fixture = warmupFixture(async () => cloud);
+    fixture.warmImage('/next.jpg');
+    await fixture.flush();
+    assert.deepEqual(fixture.reads, cloud ? [] : ['/next.jpg']);
+  }
+});
+
+test('cancelled or superseded warmup cannot read an original after the attribute check resolves', async () => {
+  for (const cancel of [true, false]) {
+    let resolveCheck;
+    const fixture = warmupFixture(() => new Promise(resolve => { resolveCheck = resolve; }));
+    fixture.warmImage('/next.jpg');
+    await fixture.flush();
+    if (cancel) fixture.cancelWarmImageScheduling();
+    else fixture.props.nextFilePath = '/another.jpg';
+    resolveCheck(false);
+    await fixture.flush();
+    assert.deepEqual(fixture.reads, []);
+  }
 });

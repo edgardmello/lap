@@ -149,3 +149,30 @@ test('Home starts warmup and update checking once, including the corrupt-library
     assert.deepEqual(calls, autoCheckUpdates ? [['finish_startup', { model: 1 }], ['update']] : [['finish_startup', { model: 1 }]]);
   }
 });
+
+test('Home restores the oMLX provider before starting background initialization', async () => {
+  const home = await readFile(new URL('../src/views/Home.vue', import.meta.url), 'utf8');
+  const start = home.indexOf('let startupFinished = false;');
+  const code = ts.transpile(home.slice(start, home.indexOf('onMounted(async () => {', start)), {
+    target: ts.ScriptTarget.ES2022,
+  });
+  const calls = [];
+  let restore;
+  const finish = new Function('watch', 'nextTick', 'databaseCorrupted', 'requestAnimationFrame', 'performance', 'invoke', 'config', 'checkForUpdates', 'uiStore', 'setImageSearchProvider',
+    code + ';return finishStartup;')(
+    watch, nextTick, ref(false), () => {}, { mark() {} },
+    async (...args) => calls.push(args),
+    { settings: { imageSearch: { model: 0, provider: 'omlx', omlx: { model: 'm' } }, autoCheckUpdates: false } },
+    () => calls.push(['update']), { startupReady: false },
+    (...args) => {
+      calls.push(['set_provider', ...args]);
+      return new Promise(resolve => { restore = resolve; });
+    },
+  );
+  const done = finish();
+  await nextTick();
+  assert.deepEqual(calls, [['set_provider', 'omlx', { model: 'm' }]]);
+  restore();
+  await done;
+  assert.deepEqual(calls.at(-1), ['finish_startup', { model: 0 }]);
+});

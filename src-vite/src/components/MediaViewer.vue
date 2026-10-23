@@ -44,7 +44,6 @@
             :tooltip="!canSlideShow
               ? $t('image_viewer.toolbar.slide_show')
               : (isSlideShow ? $t('image_viewer.toolbar.pause') : $t('image_viewer.toolbar.slide_show'))"
-            :shortcut="shortcut('slideshow.toggle')"
             @click="handleToggleSlideShow"
           />
           <ContextMenu v-if="isSlideShow && canSlideShow"
@@ -239,11 +238,11 @@
     <!-- Close Button (Top Right) -->
     <button 
       v-if="mode === 0 && !config.mediaViewer.isPinned && !isFullScreen"
-      class="absolute right-2 top-2 z-90 p-2 rounded-full text-base-content/70 bg-base-100/30 hover:text-base-content hover:bg-base-100/70 cursor-pointer"
+      class="preview-press-button absolute right-2 top-2 z-90 p-2 rounded-full text-base-content/70 bg-base-100/30 hover:text-base-content hover:bg-base-100/70 cursor-pointer"
       @click.stop="$emit('close')"
       @dblclick.stop
     >
-      <IconClose class="w-5 h-5" />
+      <span class="preview-press-icon flex pointer-events-none"><IconClose class="w-5 h-5" /></span>
     </button>
 
     <div
@@ -263,7 +262,7 @@
         <div
           v-for="badge in quickViewStatusBadges"
           :key="badge.key"
-          class="thumb-badge thumb-badge-muted"
+          class="thumb-badge"
         >
           <template v-if="badge.icons?.length">
             <div class="flex items-center gap-0.5">
@@ -294,7 +293,7 @@
       <!-- Previous Button (Overlay, media-area anchored) -->
       <button
         v-if="!isSlideShow && (showOverlayNav || previewFullScreen)"
-        class="absolute left-2 top-1/2 -translate-y-1/2 z-70 p-2 rounded-full bg-base-100/30 backdrop-blur-md transition-opacity duration-200"
+        class="preview-press-button absolute left-2 top-1/2 -translate-y-1/2 z-70 p-2 rounded-full bg-base-100/30 backdrop-blur-md transition-opacity duration-200"
         :class="[
           isHoverLeft ? (hasPrevious ? 'opacity-100 pointer-events-auto hover:text-base-content hover:bg-base-100/80 cursor-pointer' : 'opacity-30 cursor-default') : 'opacity-0 pointer-events-none'
         ]"
@@ -302,13 +301,13 @@
         @click.stop="triggerPrev"
         @dblclick.stop
       >
-        <IconLeft class="w-8 h-8" />
+        <span class="preview-press-icon flex pointer-events-none"><IconLeft class="w-8 h-8" /></span>
       </button>
 
       <!-- Next Button (Overlay, media-area anchored) -->
       <button
         v-if="!isSlideShow && (showOverlayNav || previewFullScreen)"
-        class="absolute right-2 top-1/2 -translate-y-1/2 z-70 p-2 rounded-full bg-base-100/30 backdrop-blur-md transition-opacity duration-200"
+        class="preview-press-button absolute right-2 top-1/2 -translate-y-1/2 z-70 p-2 rounded-full bg-base-100/30 backdrop-blur-md transition-opacity duration-200"
         :class="[
           isHoverRight ? (hasNext ? 'opacity-100 pointer-events-auto hover:text-base-content hover:bg-base-100/80 cursor-pointer' : 'opacity-30 cursor-default') : 'opacity-0 pointer-events-none'
         ]"
@@ -316,7 +315,7 @@
         @click.stop="triggerNext"
         @dblclick.stop
       >
-        <IconRight class="w-8 h-8" />
+        <span class="preview-press-icon flex pointer-events-none"><IconRight class="w-8 h-8" /></span>
       </button>
 
       <div
@@ -1239,7 +1238,7 @@ const triggerPrev = () => {
   if (props.hasPrevious) {
     emit('prev');
   } else {
-    // showMessage((localeMsg.value as any).tooltip.image_viewer.first_image);
+    showMessage((localeMsg.value as any).tooltip.image_viewer.first_image);
   }
 }
 
@@ -1247,7 +1246,7 @@ const triggerNext = () => {
   if (props.hasNext) {
     emit('next');
   } else {
-    // showMessage((localeMsg.value as any).tooltip.image_viewer.last_image);
+    showMessage((localeMsg.value as any).tooltip.image_viewer.last_image);
   }
 }
 

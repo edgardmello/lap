@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Tente mudar para outra biblioteca."
   },
   "album": {
+    "drop": {
+      "add": "Arraste uma pasta para adicionar",
+      "separate": "Arraste arquivos e pastas separadamente.",
+      "confirm_folder": "Selecionar pasta: {name}",
+      "folders_only": "Arraste uma pasta."
+    },
     "album_list": "Álbuns",
     "search_folders": "Pesquisar pastas",
     "favorite_folders_only": "Apenas pastas favoritas",
@@ -150,6 +156,7 @@
       "validation_name": "Insira um nome para o álbum inteligente.",
       "validation_rule": "Adicione pelo menos uma regra completa.",
       "fields": {
+        "folder_name": "Nome da pasta",
         "name": "Nome do arquivo",
         "file_type": "Tipo de arquivo",
         "media_subtype": "Subtipo de mídia",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Disponível somente online",
+    "cloud_only_pending": "Disponível somente online — informações incompletas",
     "original_unavailable": "O ficheiro original está indisponível",
     "requires_original": "Requer o ficheiro original. Volte a ligar o dispositivo de armazenamento."
   },
@@ -461,7 +470,8 @@
         "Tamanho",
         "Dimensão",
         "Duração",
-        "Aleatório"
+        "Aleatório",
+        "Adição"
       ],
       "similarity": "Similaridade",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Recuperável",
       "groups_title": "Grupos duplicados",
+      "skipped_cloud_only": "{count} arquivos disponíveis somente online foram ignorados",
       "actions_title": "Ações",
       "compare": "Comparar",
       "rescan": "Verificar novamente",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Mostrar no Finder...",
       "reveal_in_file_explorer": "Mostrar no Explorer...",
       "refresh_file_info": "Atualizar informações do arquivo",
+      "index_cloud_files": "Baixar, indexar e liberar espaço",
       "set_album_cover": "Definir como capa",
       "set_as": "Definir como",
       "set_desktop_wallpaper": "Definir como papel de parede",
@@ -1001,7 +1013,10 @@
       "cancelled": "Cancelado",
       "complete": "Concluído",
       "succeeded": "Atualizados: {count}",
-      "failed": "Falhas: {count}"
+      "failed": "Falhas: {count}",
+      "release_requested": "Liberação solicitada: {count}",
+      "kept_local": "Mantidos neste dispositivo: {count}",
+      "kept_local_hint": "Arquivos mantidos sempre neste dispositivo ou cujo espaço o Windows não permitiu que o Lap liberasse (acesso controlado a pastas)."
     },
     "image_editor": {
       "title": "Editar",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Reduzir",
         "zoom_fit": "Alternar tamanho real / ajustar à janela",
         "cycle_background": "Alternar fundo",
-        "toggle_slideshow": "Reproduzir / pausar apresentação",
         "open_new_window": "Abrir em nova janela",
         "open_external_app": "Abrir em app externo",
         "edit_image": "Editar",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Excluir permanentemente",
         "refresh_file_info": "Atualizar informações do arquivo",
         "print": "Imprimir",
-        "toggle_favorite": "Alternar favorito",
-        "set_clear_rating": "Definir / limpar classificação",
-        "mark_pick": "Marcar como selecionada",
-        "mark_rejected": "Marcar como rejeitada",
-        "mark_unreviewed": "Marcar como não revisada",
+        "toggle_favorite": "Adicionar / Remover dos favoritos",
+        "toggle_favorite_and_next": "Adicionar / Remover dos favoritos → Seguinte",
+        "set_clear_rating": "Classificação",
+        "set_clear_rating_and_next": "Classificação → Seguinte",
+        "mark_pick": "Seleção · Selecionadas",
+        "mark_pick_and_next": "Seleção · Selecionadas → Seguinte",
+        "mark_rejected": "Seleção · Rejeitadas",
+        "mark_rejected_and_next": "Seleção · Rejeitadas → Seguinte",
+        "mark_unreviewed": "Seleção · Não revisadas",
+        "mark_unreviewed_and_next": "Seleção · Não revisadas → Seguinte",
         "clear_rating": "Limpar classificação",
         "rate_one": "Avaliar 1 estrela",
         "rate_two": "Avaliar 2 estrelas",
         "rate_three": "Avaliar 3 estrelas",
         "rate_four": "Avaliar 4 estrelas",
         "rate_five": "Avaliar 5 estrelas",
-        "edit_tags": "Editar tags",
-        "edit_collections": "Editar coleções",
-        "edit_comment": "Editar comentário",
+        "edit_tags": "Tags",
+        "edit_collections": "Coleções",
+        "edit_comment": "Comentário",
         "rotate": "Girar visualização no sentido horário",
         "rotate_counterclockwise": "Girar visualização no sentido anti-horário",
         "thumbnail_increase": "Aumentar miniaturas",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Avançado",
-      "section_thumbnail_cache": "Cache de miniaturas",
-      "thumbnail_quality": "Qualidade das miniaturas",
-      "thumbnail_quality_hint": "Define a resolução das miniaturas geradas. Configurações mais altas deixam as miniaturas mais nítidas, mas demoram mais para gerar e usam mais espaço em disco",
-      "section_map": "Mapa",
-      "map_provider": "Provedor de mapas",
-      "map_provider_hint": "Escolha o serviço de mapas para a vista de mapa",
-      "map_provider_options": [
-        "Global (padrão)",
-        "China (Tianditu)"
-      ],
-      "tianditu_token": "Token de API do Tianditu",
-      "tianditu_token_hint": "Necessário para blocos do Tianditu",
-      "tianditu_token_placeholder": "Cole seu token",
-      "tianditu_token_status_saved": "Guardado",
-      "tianditu_token_status_empty": "Não configurado",
-      "thumbnail_quality_options": [
-        "Baixa (256 px)",
-        "Padrão (512 px)",
-        "Alta (1024 px)"
-      ],
-      "section_external_apps": "Apps externos",
-      "manage_external_apps": "Gerenciar apps externos",
-      "external_image_editor": "Abrir foto com",
-      "external_video_app": "Abrir vídeo com",
-      "external_app_not_selected": "Nenhum app selecionado",
-      "choose_app": "Escolher",
-      "clear_app": "Limpar",
-      "default_app": "Padrão",
-      "set_default_app": "Definir como padrão",
+      "external_app": {
+        "section_external_apps": "Apps externos",
+        "manage_external_apps": "Gerenciar apps externos",
+        "external_image_editor": "Abrir foto com",
+        "external_video_app": "Abrir vídeo com",
+        "external_app_not_selected": "Nenhum app selecionado",
+        "choose_app": "Escolher",
+        "clear_app": "Limpar",
+        "default_app": "Padrão",
+        "set_default_app": "Definir como padrão"
+      },
       "section_diagnostics": "Diagnóstico",
-      "debug_mode": "Modo debug"
+      "debug_mode": "Modo debug",
+      "map": {
+        "section_map": "Mapa",
+        "map_provider": "Provedor de mapas",
+        "map_provider_hint": "Escolha o serviço de mapas para a vista de mapa",
+        "map_provider_options": [
+          "Global (padrão)",
+          "China (Tianditu)"
+        ],
+        "tianditu_token": "Token de API do Tianditu",
+        "tianditu_token_hint": "Necessário para blocos do Tianditu",
+        "tianditu_token_placeholder": "Cole seu token",
+        "tianditu_token_status_saved": "Guardado",
+        "tianditu_token_status_empty": "Não configurado"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Revertendo…",
+        "cancelled": "Cancelado. O cache original foi mantido.",
+        "new_location": "Novo local: {path}",
+        "migrating": "Migrando miniaturas…",
+        "migration_hint": "As miniaturas de todas as bibliotecas serão movidas. O novo local só será usado após a migração ser concluída com sucesso. Cancelar mantém o local atual do cache.",
+        "migration_progress": "Progresso da migração",
+        "ready": "Pronto para migrar",
+        "start": "Iniciar",
+        "cancelling": "Cancelando…",
+        "rebuild_message": "O local anterior do cache está indisponível. Continuar sem mover os arquivos? As miniaturas serão regeneradas no novo local conforme necessário. Os dados das bibliotecas, as fotos originais e os arquivos da unidade anterior não serão alterados.",
+        "rebuild_confirm": "Continuar e regenerar",
+        "section_thumbnail_cache": "Cache de miniaturas",
+        "thumbnail_quality": "Alterar a resolução das miniaturas",
+        "thumbnail_quality_hint": "Configurações mais altas deixam as miniaturas mais nítidas, mas demoram mais para gerar e usam mais espaço em disco",
+        "thumbnail_quality_options": [
+          "Baixa (256 px)",
+          "Padrão (512 px)",
+          "Alta (1024 px)"
+        ],
+        "unavailable": "Local do cache indisponível. Reconecte a unidade antes de usar ou mover o cache.",
+        "current_location": "Alterar local do cache",
+        "counting": "Contando arquivos do cache…",
+        "finishing": "Finalizando a migração do cache…",
+        "success": "Local do cache de miniaturas alterado",
+        "cleanup_warning": "O cache foi movido, mas alguns arquivos antigos não puderam ser removidos:",
+        "busy": "Aguarde a conclusão da migração do cache de miniaturas."
+      }
     },
     "database": {
       "title": "Armazenamento",

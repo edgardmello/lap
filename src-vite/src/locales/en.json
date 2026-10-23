@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Please try switching to another library."
   },
   "album": {
+    "drop": {
+      "add": "Drag a folder to add",
+      "separate": "Drag files and folders separately.",
+      "confirm_folder": "Select folder: {name}",
+      "folders_only": "Please drop a folder."
+    },
     "album_list": "Albums",
     "search_folders": "Search folders",
     "favorite_folders_only": "Favorite folders only",
@@ -150,6 +156,7 @@
       "validation_name": "Enter a smart album name.",
       "validation_rule": "Add at least one complete rule.",
       "fields": {
+        "folder_name": "Folder name",
         "name": "File name",
         "file_type": "File type",
         "media_subtype": "Media subtype",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "Available online only",
+    "cloud_only_pending": "Available online only — information incomplete",
     "original_unavailable": "Original file is unavailable",
     "requires_original": "Requires the original file. Reconnect the storage device to use this action."
   },
@@ -461,7 +470,8 @@
         "Size",
         "Dimension",
         "Duration",
-        "Random"
+        "Random",
+        "Added"
       ],
       "similarity": "Similarity",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Reclaimable",
       "groups_title": "Duplicate Sets",
+      "skipped_cloud_only": "{count} online-only files skipped",
       "actions_title": "Actions",
       "compare": "Compare",
       "rescan": "Rescan",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Reveal in Finder...",
       "reveal_in_file_explorer": "Reveal in File Explorer...",
       "refresh_file_info": "Refresh file info",
+      "index_cloud_files": "Download, index, then free up space",
       "set_album_cover": "Set as album cover",
       "set_as": "Set as",
       "set_desktop_wallpaper": "Set as desktop wallpaper",
@@ -1001,7 +1013,10 @@
       "cancelled": "Cancelled",
       "complete": "Complete",
       "succeeded": "Updated: {count}",
-      "failed": "Failed: {count}"
+      "failed": "Failed: {count}",
+      "release_requested": "Release requested: {count}",
+      "kept_local": "Kept on this device: {count}",
+      "kept_local_hint": "Files you keep on this device, or that Windows did not let Lap free up (Controlled folder access)."
     },
     "image_editor": {
       "title": "Edit",
@@ -1577,7 +1592,6 @@
         "zoom_out": "Zoom out",
         "zoom_fit": "Toggle actual size / fit to window",
         "cycle_background": "Cycle background",
-        "toggle_slideshow": "Play / pause slideshow",
         "open_new_window": "View in new window",
         "open_external_app": "Open in external app",
         "edit_image": "Edit",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Delete permanently",
         "refresh_file_info": "Refresh file info",
         "print": "Print",
-        "toggle_favorite": "Toggle favorite",
-        "set_clear_rating": "Set / clear rating",
-        "mark_pick": "Mark as pick",
-        "mark_rejected": "Mark as rejected",
-        "mark_unreviewed": "Mark as unreviewed",
+        "toggle_favorite": "Favorite / Unfavorite",
+        "toggle_favorite_and_next": "Favorite / Unfavorite → Next",
+        "set_clear_rating": "Rating",
+        "set_clear_rating_and_next": "Rating → Next",
+        "mark_pick": "Culling · Pick",
+        "mark_pick_and_next": "Culling · Pick → Next",
+        "mark_rejected": "Culling · Reject",
+        "mark_rejected_and_next": "Culling · Reject → Next",
+        "mark_unreviewed": "Culling · Unreviewed",
+        "mark_unreviewed_and_next": "Culling · Unreviewed → Next",
         "clear_rating": "Clear rating",
         "rate_one": "Rate 1 star",
         "rate_two": "Rate 2 stars",
         "rate_three": "Rate 3 stars",
         "rate_four": "Rate 4 stars",
         "rate_five": "Rate 5 stars",
-        "edit_tags": "Edit tags",
-        "edit_collections": "Edit collections",
-        "edit_comment": "Edit comment",
+        "edit_tags": "Tags",
+        "edit_collections": "Collections",
+        "edit_comment": "Comment",
         "rotate": "Rotate view (clockwise)",
         "rotate_counterclockwise": "Rotate view (counterclockwise)",
         "thumbnail_increase": "Increase thumbnail size",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Advanced",
-      "section_thumbnail_cache": "Thumbnail cache",
-      "thumbnail_quality": "Thumbnail quality",
-      "thumbnail_quality_hint": "Sets the resolution of generated thumbnails. Higher settings look sharper but take longer to generate and use more disk space",
-      "section_map": "Map",
-      "map_provider": "Map provider",
-      "map_provider_hint": "Choose the map service for Map view",
-      "map_provider_options": [
-        "Global (default)",
-        "China (Tianditu)"
-      ],
-      "tianditu_token": "Tianditu API token",
-      "tianditu_token_hint": "Required for Tianditu map tiles",
-      "tianditu_token_placeholder": "Paste your token",
-      "tianditu_token_status_saved": "Saved",
-      "tianditu_token_status_empty": "Not configured",
-      "thumbnail_quality_options": [
-        "Low (256 px)",
-        "Standard (512 px)",
-        "High (1024 px)"
-      ],
-      "section_external_apps": "External apps",
-      "manage_external_apps": "Manage external apps",
-      "external_image_editor": "Open photo in",
-      "external_video_app": "Open video in",
-      "external_app_not_selected": "No app selected",
-      "choose_app": "Choose",
-      "clear_app": "Clear",
-      "default_app": "Default",
-      "set_default_app": "Set default",
+      "external_app": {
+        "section_external_apps": "External apps",
+        "manage_external_apps": "Manage external apps",
+        "external_image_editor": "Open photo in",
+        "external_video_app": "Open video in",
+        "external_app_not_selected": "No app selected",
+        "choose_app": "Choose",
+        "clear_app": "Clear",
+        "default_app": "Default",
+        "set_default_app": "Set default"
+      },
       "section_diagnostics": "Diagnostics",
-      "debug_mode": "Debug mode"
+      "debug_mode": "Debug mode",
+      "map": {
+        "section_map": "Map",
+        "map_provider": "Map provider",
+        "map_provider_hint": "Choose the map service for Map view",
+        "map_provider_options": [
+          "Global (default)",
+          "China (Tianditu)"
+        ],
+        "tianditu_token": "Tianditu API token",
+        "tianditu_token_hint": "Required for Tianditu map tiles",
+        "tianditu_token_placeholder": "Paste your token",
+        "tianditu_token_status_saved": "Saved",
+        "tianditu_token_status_empty": "Not configured"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Rolling back…",
+        "cancelled": "Cancelled. Original cache retained.",
+        "new_location": "New location: {path}",
+        "migrating": "Migrating thumbnails…",
+        "migration_hint": "All libraries’ thumbnails will be moved. The new location takes effect only after migration succeeds. Cancelling keeps the current cache location.",
+        "migration_progress": "Migration progress",
+        "ready": "Ready to migrate",
+        "start": "Start",
+        "cancelling": "Cancelling…",
+        "rebuild_message": "The previous thumbnail cache location is unavailable. Continue without moving its files? Thumbnails will be regenerated as needed at the new location. Your library data and original photos will not be changed. Files on the previous drive will be left untouched.",
+        "rebuild_confirm": "Continue and regenerate",
+        "section_thumbnail_cache": "Thumbnail cache",
+        "thumbnail_quality": "Change thumbnail resolution",
+        "thumbnail_quality_hint": "Higher settings look sharper but take longer to generate and use more disk space",
+        "thumbnail_quality_options": [
+          "Low (256 px)",
+          "Standard (512 px)",
+          "High (1024 px)"
+        ],
+        "unavailable": "Cache location unavailable. Reconnect the drive before using or moving this cache.",
+        "current_location": "Change cache location",
+        "counting": "Counting cache files…",
+        "finishing": "Finishing cache migration…",
+        "success": "Thumbnail cache location changed successfully",
+        "cleanup_warning": "The cache was moved, but some old files could not be removed:",
+        "busy": "Please wait for the thumbnail cache migration to finish."
+      }
     },
     "database": {
       "title": "Storage",

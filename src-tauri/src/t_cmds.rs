@@ -272,9 +272,55 @@ fn gstreamer_element_missing(exit_code: Option<i32>, stderr: &[u8]) -> bool {
 /// set last selected item index
 #[tauri::command]
 pub fn set_last_selected_item_index(index: i64) -> Result<(), String> {
-    let mut config = t_config::load_app_config()?;
-    config.last_selected_item_index = index;
-    t_config::save_app_config(&config)
+    t_config::update_app_config(|config| {
+        config.last_selected_item_index = index;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn get_thumbnail_cache_location() -> Result<crate::t_cache_storage::CacheLocation, String> {
+    crate::t_cache_storage::location()
+}
+
+#[tauri::command]
+pub async fn get_thumbnail_cache_migration_count() -> Result<u64, crate::t_cache_storage::CacheChangeError> {
+    tauri::async_runtime::spawn_blocking(crate::t_cache_storage::migration_file_count)
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn change_thumbnail_cache_location(
+    new_dir: Option<String>,
+    operation_id: String,
+    allow_missing_source: Option<bool>,
+    on_progress: tauri::ipc::Channel<crate::t_cache_storage::CacheProgress>,
+    status_state: State<'_, t_face::FaceIndexingStatus>,
+) -> Result<crate::t_cache_storage::CacheChangeResult, crate::t_cache_storage::CacheChangeError> {
+    ensure_db_storage_change_allowed(&status_state)?;
+    let operation = crate::t_cache_storage::MigrationOperation::begin(operation_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = cache_migration_library_guard(&operation.cancellation)?;
+        crate::t_cache_storage::change(new_dir, allow_missing_source.unwrap_or(false), &operation.cancellation, |progress| { let _ = on_progress.send(progress); })
+    }).await.map_err(|e| e.to_string())?
+}
+
+fn cache_migration_library_guard(
+    cancellation: &crate::t_cache_storage::MigrationCancellation,
+) -> Result<std::sync::RwLockWriteGuard<'static, ()>, crate::t_cache_storage::CacheChangeError> {
+    loop {
+        cancellation.check()?;
+        match FILE_REFRESH_LIBRARY_LOCK.try_write() {
+            Ok(guard) => return Ok(guard),
+            Err(std::sync::TryLockError::WouldBlock) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(error) => return Err(error.to_string().into()),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn cancel_thumbnail_cache_migration(operation_id: String) -> Result<bool, String> {
+    crate::t_cache_storage::cancel_migration(&operation_id)
 }
 
 #[tauri::command]
@@ -517,11 +563,21 @@ pub fn get_album(album_id: i64) -> Result<Album, String> {
 
 /// Recheck one album root when the user selects that album or one of its folders.
 #[tauri::command]
-pub fn check_album_accessibility(album_id: i64) -> Result<bool, String> {
-    let mut album = Album::get_album_by_id(album_id)
-        .map_err(|e| format!("Error while checking album accessibility: {}", e))?;
-    t_utils::refresh_album_accessibility(&mut album);
-    Ok(album.is_accessible)
+pub async fn check_album_accessibility(album_id: i64) -> Result<bool, String> {
+    let library_id = t_config::current_library_id()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (mut album, generation) = with_current_library(&library_id, || {
+            let album = Album::get_album_by_id(album_id)
+                .map_err(|e| format!("Error while checking album accessibility: {}", e))?;
+            Ok((album, t_utils::album_accessibility_generation()))
+        })?;
+        // Network I/O must not hold the library-switch lock. Ignore stale probes.
+        t_utils::refresh_album_accessibility_if_current(&mut album, generation);
+        if generation != t_utils::album_accessibility_generation() {
+            return Err("Library changed".to_string());
+        }
+        Ok(album.is_accessible)
+    }).await.map_err(|e| format!("Album accessibility check failed: {e}"))?
 }
 
 /// recount files for an album and return updated album
@@ -610,12 +666,8 @@ pub async fn remove_album(state: State<'_, IndexCancellation>, id: i64) -> Resul
     let library_id = crate::t_config::load_app_config()
         .map(|c| c.current_library_id)
         .unwrap_or_else(|_| "default".to_string());
-    let album_cache_dir = crate::t_config::get_app_cache_dir()
-        .map(|dir| dir.join(library_id).join(id.to_string()))
-        .map_err(|e| format!("Error while resolving album thumbnail cache path: {}", e))?;
-    if album_cache_dir.exists() {
-        std::fs::remove_dir_all(&album_cache_dir)
-            .map_err(|e| format!("Error while removing album thumbnail cache: {}", e))?;
+    if let Err(error) = crate::t_cache_storage::remove_album_cache(&library_id, id) {
+        eprintln!("Album {id} was removed, but its thumbnail cache could not be cleaned: {error}");
     }
 
     Ok(result)
@@ -1197,8 +1249,10 @@ pub async fn get_query_file_ids(params: QueryParams) -> Result<Vec<i64>, String>
 }
 
 #[tauri::command]
-pub fn get_library_visible_counts() -> Result<t_sqlite::LibraryVisibleCounts, String> {
-    AFile::get_library_visible_counts()
+pub async fn get_library_visible_counts(id: Option<String>) -> Result<t_sqlite::LibraryVisibleCounts, String> {
+    tauri::async_runtime::spawn_blocking(move || AFile::get_library_visible_counts(id.as_deref()))
+        .await
+        .map_err(|e| format!("Failed to join library count task: {}", e))?
         .map_err(|e| format!("Error while getting library visible counts: {}", e))
 }
 
@@ -2869,12 +2923,50 @@ pub fn update_file_info(file_id: i64, file_path: &str) -> Result<Option<AFile>, 
         .map_err(|e| format!("Error while updating file info: {}", e))
 }
 
-#[derive(serde::Serialize)]
+#[derive(Default, serde::Serialize)]
 pub struct FileRefreshResult {
     file: AFile,
     size_delta: i64,
     /// True when the file was left unread because it is an unchanged cloud-only file.
     skipped: bool,
+    /// The provider accepted an asynchronous release request.
+    release_requested: bool,
+    /// A later stage failed after metadata was already updated.
+    error: Option<String>,
+}
+
+/// Re-read a file's metadata. Without `force`, an unchanged online-only file is left unread.
+fn refresh_file(file_id: i64, force: bool) -> Result<Option<FileRefreshResult>, String> {
+    let old = AFile::get_file_info(file_id)?.ok_or("File not found")?;
+    let path = old.file_path.as_deref().ok_or("File path missing")?;
+    // Reading a cloud-only file downloads it; if its size and date still
+    // match the stored info, there is nothing new to read.
+    if !force && fs::metadata(path).is_ok_and(|m| {
+        t_utils::is_cloud_only(&m)
+            && m.len() as i64 == old.size
+            && t_utils::systemtime_to_timestamp(m.modified().ok()) == old.modified_at
+    }) {
+        return Ok(Some(FileRefreshResult { file: old, size_delta: 0, skipped: true, ..Default::default() }));
+    }
+    let updated = AFile::update_file_info(file_id, path, chrono::Utc::now().timestamp_millis())?;
+    if let Some(ref file) = updated {
+        let content_changed = old.metadata_pending || old.modified_at != file.modified_at || old.size != file.size;
+        if content_changed || old.width != file.width || old.height != file.height
+            || old.e_orientation != file.e_orientation {
+            AThumb::delete(file_id)?;
+        }
+        if content_changed {
+            AFile::update_column(file_id, "embeds", &Option::<Vec<u8>>::None)?;
+        }
+    }
+    AFile::update_column(file_id, "cloud_only", &false)?;
+    AFile::update_column(file_id, "metadata_pending", &false)?;
+    Ok(AFile::get_file_info(file_id)?.map(|file| FileRefreshResult {
+        size_delta: file.size - old.size,
+        file,
+        skipped: false,
+        ..Default::default()
+    }))
 }
 
 /// Force a selected file refresh without accepting a stale frontend file path.
@@ -2885,34 +2977,60 @@ pub async fn refresh_selected_file_info(library_id: String, file_id: i64) -> Res
         if t_config::current_library_id()? != library_id {
             return Err("Library changed".to_string());
         }
-        let old = AFile::get_file_info(file_id)?.ok_or("File not found")?;
-        let path = old.file_path.as_deref().ok_or("File path missing")?;
-        // Reading a cloud-only file downloads it; if its size and date still
-        // match the stored info, there is nothing new to read.
-        if fs::metadata(path).is_ok_and(|m| {
-            t_utils::is_cloud_only(&m)
-                && m.len() as i64 == old.size
-                && t_utils::systemtime_to_timestamp(m.modified().ok()) == old.modified_at
-        }) {
-            return Ok(Some(FileRefreshResult { file: old, size_delta: 0, skipped: true }));
-        }
-        let updated = AFile::update_file_info(file_id, path, chrono::Utc::now().timestamp_millis())?;
-        if let Some(ref file) = updated {
-            let content_changed = old.modified_at != file.modified_at || old.size != file.size;
-            if content_changed || old.width != file.width || old.height != file.height
-                || old.e_orientation != file.e_orientation {
-                AThumb::delete(file_id)?;
-            }
-            if content_changed {
-                AFile::update_column(file_id, "embeds", &Option::<Vec<u8>>::None)?;
-            }
-        }
-        Ok(AFile::get_file_info(file_id)?.map(|file| FileRefreshResult {
-            size_delta: file.size - old.size,
-            file,
-            skipped: false,
-        }))
+        refresh_file(file_id, false)
     }).await.map_err(|e| format!("File refresh task failed: {e}"))?
+}
+
+/// "Download, index, then free up space": index an online-only file in full,
+/// store its thumbnail, then ask OneDrive to free it again. Local files are
+/// refreshed and stay local.
+#[tauri::command]
+pub async fn index_cloud_file(
+    library_id: String,
+    file_id: i64,
+    thumbnail_size: u32,
+    raw_display_options: RawDisplayOptions,
+) -> Result<Option<FileRefreshResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = FILE_REFRESH_LIBRARY_LOCK.read().map_err(|e| e.to_string())?;
+        if t_config::current_library_id()? != library_id {
+            return Err("Library changed".to_string());
+        }
+        let path = AFile::get_file_info(file_id)?.and_then(|file| file.file_path).ok_or("File not found")?;
+        let was_cloud_only = t_utils::is_cloud_only_path(&path);
+        let Some(mut result) = refresh_file(file_id, true)? else { return Ok(None) };
+        if !was_cloud_only {
+            return Ok(Some(result));
+        }
+        // Keep the refreshed file even if thumbnail generation or release fails.
+        let release = (|| -> Result<bool, String> {
+            let file = &result.file;
+            let thumb = AThumb::cache_cloud_file_thumbnail(
+                file_id, &path, file.file_type.unwrap_or(0), file.e_orientation.unwrap_or(1) as i32,
+                thumbnail_size, raw_display_options, file.duration.map(|d| d as u64),
+            )?;
+            if !matches!(thumb, Some(ref thumb) if thumb.error_code == 0 && thumb.thumb_data.is_some()) {
+                return Err("Thumbnail could not be cached; the file was kept on this device".to_string());
+            }
+            // Attribute changes request asynchronous dehydration, not completion.
+            t_utils::release_cloud_file(&path)
+        })();
+        match release {
+            Ok(requested) => result.release_requested = requested,
+            Err(error) => result.error = Some(error),
+        }
+        let cloud_only = t_utils::is_cloud_only_path(&path);
+        result.file.cloud_only = cloud_only;
+        if let Err(error) = AFile::update_column(file_id, "cloud_only", &cloud_only) {
+            result.error.get_or_insert(error);
+        }
+        match AFile::get_file_info(file_id) {
+            Ok(Some(file)) => result.file = file,
+            Ok(None) => { result.error.get_or_insert("File no longer exists in the catalog".to_string()); }
+            Err(error) => { result.error.get_or_insert(error); }
+        }
+        Ok(Some(result))
+    }).await.map_err(|e| format!("Cloud file indexing task failed: {e}"))?
 }
 
 /// add or refresh a file in db and return the indexed file info
@@ -2929,6 +3047,14 @@ pub fn add_file_to_db(folder_id: i64, file_path: &str) -> Result<Option<AFile>, 
 #[tauri::command]
 pub fn check_file_exists(file_path: &str) -> bool {
     Path::new(file_path).exists()
+}
+
+/// Live cloud-only check (the catalog's flag can be stale); reads attributes only.
+#[tauri::command]
+pub async fn is_cloud_only_file(file_path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || t_utils::is_cloud_only_path(&file_path))
+        .await
+        .unwrap_or(false)
 }
 
 /// Check readability without decoding or modifying the original.
@@ -3353,7 +3479,12 @@ pub async fn generate_embedding(
     library_id: Option<String>,
 ) -> Result<String, String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
+    let provider = t_omlx::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(settings) = provider {
+            omlx_file_embedding(&settings, file_id, &library_id)?;
+            return Ok("Embedding generated and saved".to_string());
+        }
         crate::t_startup::ensure_ai(&app_handle, None)?;
         with_current_library(&library_id, || {
             AFile::generate_embedding(&app_handle.state::<t_ai::AiState>(), file_id)
@@ -3371,15 +3502,77 @@ pub async fn search_similar_images(
     library_id: Option<String>,
 ) -> Result<Vec<AFile>, String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
+    // One provider snapshot for the query vector, the stored vectors it is
+    // compared with, and the score filter.
+    let provider = t_omlx::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::t_startup::ensure_ai(&app_handle, None)?;
+        let Some(settings) = provider else {
+            crate::t_startup::ensure_ai(&app_handle, None)?;
+            return with_current_library(&library_id, || {
+                AFile::search_similar_images(&app_handle.state::<t_ai::AiState>(), params, &library_id)
+                    .map_err(|e| format!("Error while searching similar images: {}", e))
+            });
+        };
+        let embedding = omlx_query_embedding(&settings, &params, &library_id)?;
         with_current_library(&library_id, || {
-            AFile::search_similar_images(&app_handle.state::<t_ai::AiState>(), params)
+            AFile::search_similar_images_with(&params, Some(&settings), &library_id, &embedding)
                 .map_err(|e| format!("Error while searching similar images: {}", e))
         })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Query vector for an oMLX search. The HTTP request runs without the
+/// library guard so a slow server cannot hold off library switches; the
+/// guard is taken again for each database access, which fails with
+/// "Library changed" if the user switched libraries in the meantime.
+fn omlx_query_embedding(
+    settings: &t_omlx::OmlxEmbeddingSettings,
+    params: &ImageSearchParams,
+    library_id: &str,
+) -> Result<Vec<f32>, String> {
+    if !params.search_text.is_empty() {
+        return t_omlx::embed_search_text(settings, &params.search_text);
+    }
+    let file_id = params
+        .file_id
+        .filter(|&id| id > 0)
+        .ok_or_else(|| "No file_id or search_text provided".to_string())?;
+    omlx_file_embedding(settings, file_id, library_id)
+}
+
+/// oMLX vector for `file_id`: the stored one, or a new one embedded without
+/// holding the library guard and stored only if the library is unchanged.
+fn omlx_file_embedding(
+    settings: &t_omlx::OmlxEmbeddingSettings,
+    file_id: i64,
+    library_id: &str,
+) -> Result<Vec<f32>, String> {
+    let model_id = settings.model_id();
+    enum Source {
+        Stored(Vec<f32>),
+        Embed(Vec<u8>),
+    }
+    let source = with_current_library(library_id, || {
+        if let Ok(embedding) = AFile::get_embedding_for_model(file_id, &model_id) {
+            return Ok(Source::Stored(embedding));
+        }
+        match AFile::embedding_input(file_id, &model_id, library_id)? {
+            Some(bytes) => Ok(Source::Embed(bytes)),
+            // Stored by a concurrent indexer between the two reads.
+            None => AFile::get_embedding_for_model(file_id, &model_id).map(Source::Stored),
+        }
+    })?;
+    let bytes = match source {
+        Source::Stored(embedding) => return Ok(embedding),
+        Source::Embed(bytes) => bytes,
+    };
+    let embedding = t_omlx::embed_single_image(settings, &bytes)?;
+    with_current_library(library_id, || {
+        AFile::store_embeddings(&[(file_id, embedding.clone())], &model_id)
+    })?;
+    Ok(embedding)
 }
 
 #[tauri::command]

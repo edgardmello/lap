@@ -276,23 +276,25 @@
               >
                 <button 
                   :class="[
-                    'p-2 rounded-full pointer-events-auto bg-base-100/30', 
+                    'preview-press-button p-2 rounded-full pointer-events-auto bg-base-100/30',
                     selectedItemIndex > 0 ? 'text-base-content/70 hover:text-base-content hover:bg-base-100/70 cursor-pointer' : 'text-base-content/30'
                   ]"
+                  :disabled="selectedItemIndex <= 0"
                   @click="requestNavigate('prev')"
                   @dblclick.stop
                 >
-                  <component :is="isFilmstripVertical ? IconArrowUp : IconLeft" class="w-8 h-8" />
+                  <span class="preview-press-icon flex pointer-events-none"><component :is="isFilmstripVertical ? IconArrowUp : IconLeft" class="w-8 h-8" /></span>
                 </button>
                 <button 
                   :class="[
-                    'p-2 rounded-full pointer-events-auto bg-base-100/30', 
+                    'preview-press-button p-2 rounded-full pointer-events-auto bg-base-100/30',
                     selectedItemIndex < fileList.length - 1 ? 'text-base-content/70 hover:text-base-content hover:bg-base-100/70 cursor-pointer' : 'text-base-content/30'
                   ]"
+                  :disabled="selectedItemIndex >= fileList.length - 1"
                   @click="requestNavigate('next')" 
                   @dblclick.stop
                 >
-                  <component :is="isFilmstripVertical ? IconArrowDown : IconRight" class="w-8 h-8" />
+                  <span class="preview-press-icon flex pointer-events-none"><component :is="isFilmstripVertical ? IconArrowDown : IconRight" class="w-8 h-8" /></span>
                 </button> 
               </div>
             </div>
@@ -397,7 +399,7 @@
             <div class="absolute inset-1 z-90 flex items-center justify-between pointer-events-none">
               <button
                 :class="[
-                  'p-2 rounded-full bg-base-100/30 transition-opacity duration-200',
+                  'preview-press-button p-2 rounded-full bg-base-100/30 transition-opacity duration-200',
                   quickViewHoverLeft
                     ? (selectedItemIndex > 0
                       ? 'opacity-100 pointer-events-auto text-base-content/70 hover:text-base-content hover:bg-base-100/70 cursor-pointer'
@@ -409,11 +411,11 @@
                 @click.stop="requestNavigate('prev')"
                 @dblclick.stop
               >
-                <IconLeft class="w-8 h-8" />
+                <span class="preview-press-icon flex pointer-events-none"><IconLeft class="w-8 h-8" /></span>
               </button>
               <button
                 :class="[
-                  'p-2 rounded-full bg-base-100/30 transition-opacity duration-200',
+                  'preview-press-button p-2 rounded-full bg-base-100/30 transition-opacity duration-200',
                   quickViewHoverRight
                     ? (selectedItemIndex < fileList.length - 1
                       ? 'opacity-100 pointer-events-auto text-base-content/70 hover:text-base-content hover:bg-base-100/70 cursor-pointer'
@@ -425,7 +427,7 @@
                 @click.stop="requestNavigate('next')"
                 @dblclick.stop
               >
-                <IconRight class="w-8 h-8" />
+                <span class="preview-press-icon flex pointer-events-none"><IconRight class="w-8 h-8" /></span>
               </button>
             </div>
           </div>
@@ -580,6 +582,7 @@
     v-if="fileRefreshSelection"
     :file-ids="fileRefreshSelection.ids"
     :library-id="fileRefreshSelection.libraryId"
+    :free-space="fileRefreshSelection.freeSpace"
     :finish-refresh="finishSelectedFileRefresh"
     @close="fileRefreshSelection = null"
   />
@@ -760,6 +763,8 @@
 </template>
 
 <script setup lang="ts">
+import { externalDragKind, updateExternalDrag, resetExternalDrag, finishExternalDrag } from '@/common/externalDrag';
+import { getExternalDropUris, getExternalHttpDropUrls, getExternalFileDropPaths, fileUrlToPath, hasExternalDropIntent } from '@/common/externalDrop';
 
 import PrintImage from '@/components/PrintImage.vue';
 import { defineAsyncComponent, ref, watch, computed, createVNode, onMounted, onBeforeUnmount, nextTick, render, markRaw } from 'vue';
@@ -780,6 +785,7 @@ import { getAlbum, getAllAlbums, recountAlbum, getQueryCountAndSum, getQueryTime
          dedupDelete, getQueryFilePosition, getFolderSearchExcluded,
          listCollections, createCollection, addFilesToCollection, removeFilesFromCollection, getFileCollections, getCollectionCountAndSum, getCollectionFiles, getCollectionGroupedQueryRows, getCollectionGroupFileIds, getCollectionQueryFileIds, fetchFolder, isDirectoryAccessible, checkAlbumAccessibility, addTagToFile } from '@/common/api';
 import { config, libConfig } from '@/common/config';
+import { createThumbnailScheduler } from '@/common/thumbnailScheduler';
 import {
   gridSizeFromPosition,
   gridSizePositionFromGridSize,
@@ -1104,7 +1110,7 @@ async function refreshSelectionPanelPreviews() {
   const previews = previewIds.map(id => filesById.get(id)).filter(Boolean);
   if (requestId !== selectionPreviewRequestId) return;
   selectionPreviewFiles.value = previews;
-  await getFileListThumb(previews, 0, 4);
+  await getFileListThumb(previews, { viewportBound: false });
 }
 
 watch([selectMode, selectedFilesVersion], () => {
@@ -1147,11 +1153,11 @@ function removeDeletedFilesFromImageViewerSession(fileIds: number[]) {
   return files.length;
 }
 
-const fileRefreshSelection = ref<{ ids: number[]; libraryId: string; requestId: number; groupSizes: Map<string, number> } | null>(null);
-function startSelectedFileRefresh() {
+const fileRefreshSelection = ref<{ ids: number[]; libraryId: string; requestId: number; groupSizes: Map<string, number>; freeSpace: boolean } | null>(null);
+function startSelectedFileRefresh(freeSpace = false) {
   if (fileRefreshSelection.value || selectedFileIds.size === 0) return;
   fileRefreshSelection.value = {
-    ids: Array.from(selectedFileIds), libraryId: libConfig._libraryId, requestId: currentContentRequestId,
+    ids: Array.from(selectedFileIds), libraryId: libConfig._libraryId, requestId: currentContentRequestId, freeSpace,
     groupSizes: new Map(Array.from(groupMetaMap, ([id, meta]) => [id, meta.size])),
   };
 }
@@ -1196,7 +1202,7 @@ async function finishSelectedFileRefresh(results: Array<{ file: any; size_delta:
   await nextTick();
   if (selection.libraryId !== libConfig._libraryId || selection.requestId !== currentContentRequestId) return;
   if (scrollTop !== undefined) gridViewRef.value?.scrollToPosition(scrollTop);
-  await getFileListThumb(refreshedFiles, 0, 4, true);
+  await getFileListThumb(refreshedFiles, { bustCache: true, viewportBound: false });
 }
 
 const selectionAccessFiles = ref<any[]>([]);
@@ -1204,6 +1210,7 @@ const selectionAccessPending = ref(false);
 const selectionHasUnavailable = computed(() => selectionAccessPending.value
   || selectionAccessFiles.value.some(isOriginalUnavailable)
   || getActionableSelectedItems().some(isOriginalUnavailable));
+const selectionHasCloudOnly = computed(() => getActionableSelectedItems().some(file => file.cloud_only));
 let selectionAccessRequest = 0;
 let selectionAccessTimer: ReturnType<typeof setTimeout> | null = null;
 watch([selectMode, selectedFilesVersion, () => libConfig._libraryId], () => {
@@ -1242,6 +1249,7 @@ const selectionMenuItems = useFileMenuItems(
     selectionMediaKind,
     selectionCount: selectedCount,
     selectionHasUnavailable,
+    selectionHasCloudOnly,
   },
 );
 
@@ -2308,7 +2316,7 @@ function enterMetadataTempView(
   if (tempViewMode.value === 'none') {
     backupState.value = createViewBackup();
   }
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   tempViewMode.value = mode;
   showQuickView.value = false;
   contentTitle.value = title;
@@ -2699,44 +2707,6 @@ let pointerDragFiles: Array<{
 let dragGhostHotspotX = 0;
 let dragGhostHotspotY = 0;
 
-function getExternalDropUris(dt: DataTransfer | null) {
-  const value = dt?.getData('text/uri-list')
-    || dt?.getData('text/x-moz-url')
-    || dt?.getData('text/plain')
-    || '';
-  return value
-    .split(/\r?\n/)
-    .map(uri => uri.trim())
-    .filter(uri => uri.length > 0 && !uri.startsWith('#'));
-}
-
-function getExternalHttpDropUrls(uris: string[]) {
-  return uris
-    .filter(uri => uri.startsWith('http://') || uri.startsWith('https://'));
-}
-
-function fileUrlToPath(uri: string) {
-  if (!uri.startsWith('file://')) return null;
-  try {
-    const url = new URL(uri);
-    let path = decodeURIComponent(url.pathname);
-    if (/^\/[A-Za-z]:\//.test(path)) {
-      path = path.slice(1);
-    } else if (url.hostname && url.hostname !== 'localhost') {
-      path = `//${url.hostname}${path}`;
-    }
-    return path || null;
-  } catch {
-    return null;
-  }
-}
-
-function getExternalFileDropPaths(uris: string[]) {
-  return uris
-    .map(fileUrlToPath)
-    .filter((path): path is string => !!path);
-}
-
 function hasExternalDomDrop(event: DragEvent) {
   if (isNativeFileDragActive()) return false;
   return hasExternalDragIntent(event)
@@ -2745,14 +2715,12 @@ function hasExternalDomDrop(event: DragEvent) {
 
 function hasExternalDragIntent(event: DragEvent) {
   if (isContentInternalDrag.value || isNativeFileDragActive()) return false;
-  const dt = event.dataTransfer;
-  if (!dt) return false;
-  const types = Array.from(dt.types || []);
-  return dt.files.length > 0
-    || types.includes('Files')
-    || types.includes('text/uri-list')
-    || types.includes('text/x-moz-url');
+  return hasExternalDropIntent(event.dataTransfer);
 }
+
+watch(externalDragKind, kind => {
+  if (kind !== 'files') clearDropOverlay();
+});
 
 function clearDropOverlay() {
   dragOverCount.value = 0;
@@ -3880,6 +3848,7 @@ function handleItemClicked(
       const anchorIndex = selectedItemIndex.value;
       handleSelectMode(true);
       setItemSelected(anchorIndex, true);
+      if (isGridLayoutView.value && config.rightPanel.show) selectionPanelOpen.value = true;
 
       selectedItemIndex.value = index;
       if (index !== anchorIndex) {
@@ -4030,7 +3999,7 @@ async function handleItemSelectToggled(index: number, shiftKey: boolean = false)
   
   // Update last selected index
   lastSelectedIndex.value = index;
-  if (shiftKey && isGridLayoutView.value && config.rightPanel.show) selectionPanelOpen.value = true;
+  if (isGridLayoutView.value && config.rightPanel.show) selectionPanelOpen.value = true;
 }
 
 function toggleKeyboardSelection(direction: 'prev' | 'next') {
@@ -4392,6 +4361,7 @@ function handleItemAction(payload: { action: string, index: number }) {
     },
     'reveal': () => revealPath(fileList.value[selectedItemIndex.value].file_path),
     'refresh-file-info': () => selectMode.value ? startSelectedFileRefresh() : void updateFile(fileList.value[selectedItemIndex.value], true),
+    'index-cloud-files': () => startSelectedFileRefresh(true),
     'favorite': toggleFavorite,
     'rotate': clickRotate,
     'info': toggleInfoPanel,
@@ -4685,13 +4655,12 @@ function handleLocalKeyDown(event: KeyboardEvent) {
     return;
   }
 
-  // Disable keyboard events during slideshow except close and toggle slideshow.
+  // Keep only close and background shortcuts available during slideshow.
   if (
     isSlideShow.value &&
     !matchesShortcut('view.close', event, shortcutPlatform) &&
     !matchesShortcut('view.cycleBackground', event, shortcutPlatform) &&
-    getMatchedViewBackground(event) === null &&
-    !matchesShortcut('slideshow.toggle', event, shortcutPlatform)
+    getMatchedViewBackground(event) === null
   ) {
     return;
   }
@@ -4703,7 +4672,7 @@ function handleLocalKeyDown(event: KeyboardEvent) {
     if (selectMode.value) {
       void selectModeSetRatings(ratingShortcut);
     } else {
-      void setSelectedFileRating(ratingShortcut);
+      if (!event.repeat) void setSelectedFileRating(ratingShortcut, event.shiftKey);
     }
     return;
   }
@@ -4715,7 +4684,7 @@ function handleLocalKeyDown(event: KeyboardEvent) {
     if (selectMode.value) {
       void selectModeSetCullingFlags(cullingShortcut);
     } else {
-      void setSelectedFileCullingFlag(cullingShortcut);
+      if (!event.repeat) void setSelectedFileCullingFlag(cullingShortcut, event.shiftKey);
     }
     return;
   }
@@ -4755,11 +4724,6 @@ function handleLocalKeyDown(event: KeyboardEvent) {
     return;
   }
 
-  if ((showQuickView.value || isFilmstripView.value) && matchesShortcut('slideshow.toggle', event, shortcutPlatform)) {
-    event.preventDefault();
-    toggleSlideShow();
-    return;
-  }
 
   if (getActivePreviewMode() !== 'none' && matchesShortcut('view.zoomIn', event, shortcutPlatform) && event.key === '=') {
     event.preventDefault();
@@ -4792,7 +4756,7 @@ function handleLocalKeyDown(event: KeyboardEvent) {
     if (selectMode.value) {
       void toggleSelectModeFavorite();
     } else {
-      void toggleFavorite();
+      if (!event.repeat) void toggleFavorite(event.shiftKey);
     }
     return;
   }
@@ -5318,6 +5282,10 @@ async function syncScanStreamingTitle(albumId: number) {
 }
 
 function enterScanStreamingMode(albumId: number) {
+  // Scan order is a new query snapshot: pages from the previous sort or album
+  // must not hydrate its placeholders or enqueue thumbnails after this reset.
+  currentContentRequestId++;
+  invalidateThumbnailRequests();
   scanStreamAlbumId.value = albumId;
   void syncScanStreamingTitle(albumId);
   clearSelectionForFileListUpdate();
@@ -5550,7 +5518,13 @@ onMounted( async() => {
   window.addEventListener(PREVIEW_WINDOW_FOCUS_RESTORED, restoreOpenPreviewFocus);
   window.addEventListener('keyup', handleLocalKeyUp);
   unlistenAlbumAccessChanged = await listen('album-accessibility-changed', (event: any) => {
-    if (event.payload?.libraryId === libConfig._libraryId && !event.payload?.selectionChanged) updateContent(true);
+    if (event.payload?.libraryId !== libConfig._libraryId || event.payload?.selectionChanged) return;
+    if (config.main.sidebarIndex === SIDEBAR.ALBUM && Number(libConfig.album.id) > 0
+      && Number(event.payload?.albumId || libConfig.album.id) !== Number(libConfig.album.id)) return;
+    pendingInitialSelectedIndex = selectedItemIndex.value;
+    hasRestoredInitialSelection = false;
+    pendingRestoreScrollTop.value = gridViewRef.value?.getScrollTop() ?? null;
+    updateContent(true);
   });
   unlistenKeydown = await listen('global-keydown', handleKeyDown);
 
@@ -5592,6 +5566,11 @@ onMounted( async() => {
       return;
     }
     if (!hasExternalDragIntent(e)) return;
+    updateExternalDrag(e);
+    if (externalDragKind.value !== 'files') {
+      clearDropOverlay();
+      return;
+    }
     e.preventDefault();
     if (acceptDrops.value) {
       dragOverCount.value++;
@@ -5624,9 +5603,16 @@ onMounted( async() => {
       return;
     }
     if (!hasExternalDragIntent(e)) return;
+    updateExternalDrag(e);
+    if (externalDragKind.value !== 'files') {
+      clearDropOverlay();
+      return;
+    }
+    if (acceptDrops.value) isDragOver.value = true;
     e.preventDefault();
   };
   domDrop = async (e: DragEvent) => {
+    finishExternalDrag();
     if (isReturningNativeFileDrag(e)) {
       e.preventDefault();
       clearDropOverlay();
@@ -5643,6 +5629,8 @@ onMounted( async() => {
     }
     e.preventDefault();
     clearDropOverlay();
+    updateExternalDrag(e);
+    if (externalDragKind.value === 'folders' || externalDragKind.value === 'mixed') return;
     if (!acceptDrops.value) {
       showDropWarning.value = true;
       return;
@@ -5709,7 +5697,7 @@ onMounted( async() => {
     }
     toast.warning(t('msgbox.drop_import.no_files'));
   };
-  domDragEnd = () => clearDropOverlay();
+  domDragEnd = () => { clearDropOverlay(); resetExternalDrag(); };
   document.addEventListener('dragenter', domDragEnter);
   document.addEventListener('dragleave', domDragLeave);
   document.addEventListener('dragover', domDragOver);
@@ -5961,7 +5949,7 @@ onMounted( async() => {
       activeFile.file_path = activePath;
     }
 
-    getFileListThumb(loadedFiles, 0, 8, true);
+    getFileListThumb(loadedFiles, { bustCache: true });
   });
 
   // listen for external refresh requests (e.g. from folder context menu)
@@ -6107,7 +6095,7 @@ onBeforeUnmount(() => {
 watch(
   () => [config.settings.rawPreviewSource, config.settings.rawRenderBrightness, config.settings.rawPairDisplaySource, config.settings.groupRawJpegPairs],
   () => {
-    currentThumbRequestId++;
+    invalidateThumbnailRequests();
     for (const file of fileList.value) {
       if (Number(file.file_type) === 3) {
         clearCachedThumbnailDataUrl(file.id, config.settings.thumbnailSize);
@@ -6381,7 +6369,7 @@ function toggleMapView() {
 function openMapClusterTempView(payload: { fileIds?: number[]; minLat: number; maxLat: number; minLon: number; maxLon: number; count: number; view: { lat: number; lon: number; zoom: number } }) {
   if (tempViewMode.value === 'none') backupState.value = createViewBackup();
   mapTempViewState.value = payload.view;
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   tempViewMode.value = 'map';
   showQuickView.value = false;
   contentTitle.value = t('map.photos_in_view', { count: payload.count });
@@ -7076,13 +7064,14 @@ async function fetchMissingVisibleThumbnails(startIndex: number, endIndex: numbe
 }
 
 function handleVisibleRangeUpdate({ startIndex, endIndex }: { startIndex: number, endIndex: number }) {
+  const unchanged = lastVisibleRange.start === startIndex && lastVisibleRange.end === endIndex;
+  lastVisibleRange = { start: startIndex, end: endIndex };
+  refreshThumbnailViewport();
   // Skip if the range hasn't changed significantly
-  if (lastVisibleRange.start === startIndex && lastVisibleRange.end === endIndex) {
+  if (unchanged) {
     void fetchMissingVisibleThumbnails(startIndex, endIndex);
     return;
   }
-
-  lastVisibleRange = { start: startIndex, end: endIndex };
 
   const buffer = Math.max(40, Math.min(visibleItemCount.value, 120));
   const seqId = ++visibleRangeSeqId;
@@ -7757,8 +7746,13 @@ async function updateContent(force = false, preserveMultiSelection = selectMode.
   backupState.value = null;
   
   // Increment request ID to cancel any previous thumbnail generation and reset queue
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   const requestId = ++currentContentRequestId;
+  // Leaving the folder view re-arms its sync, so coming back picks up changes that
+  // leave the folder mtime untouched (e.g. OneDrive "Free up space").
+  if (newIndex !== SIDEBAR.ALBUM || !libConfig.album.id || libConfig.album.selected) {
+    lastSyncedAlbumFolder = '';
+  }
 
   contentReady.value = false;
   contentCountIsAuthoritative.value = false;
@@ -8114,7 +8108,7 @@ function enterSimilarSearchMode(file: any) {
   }
 
   // Increment request ID to cancel any previous thumbnail generation and reset queue
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   // 1. Backup current state
   if (tempViewMode.value === 'none') {
     backupState.value = createViewBackup();
@@ -8173,7 +8167,7 @@ async function enterPersonTempView(personId: number, personName: string) {
   if (!config.settings.face.enabled || !personId || personId <= 0) return;
 
   // Increment request ID to cancel any previous thumbnail generation and reset queue
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   // 1. Backup current state
   if (tempViewMode.value === 'none') {
     backupState.value = createViewBackup();
@@ -8224,7 +8218,7 @@ function enterAlbumPreviewMode(file: any, targetFolderPath?: string) {
   }
   
   // Increment request ID to cancel any previous thumbnail generation and reset queue
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
   // 2. Set mode
   tempViewMode.value = 'album';
   showQuickView.value = false;
@@ -8296,7 +8290,7 @@ function exitTempViewMode() {
   currentCollectionId.value = state.currentCollectionId || null;
   currentSearchFileIds.value = [...(state.currentSearchFileIds || [])];
   // Increment request ID to cancel any previous thumbnail generation (from temp view)
-  currentThumbRequestId++;
+  invalidateThumbnailRequests();
 
   // 2. Reset Mode
   tempViewMode.value = 'none';
@@ -9367,7 +9361,7 @@ const updateThumbForFile = async (file: any) => {
   );
   if (thumb) {
     if (thumb.error_code === 0 || thumb.error_code === 2) {
-      file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, true, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0));
+      file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, true, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0), !file.cloud_only);
       file.rawThumbnailStale = false;
     } else if (thumb.error_code === 1) {
       file.rawThumbnailStale = false;
@@ -9477,14 +9471,27 @@ const indexAndInsertSavedFile = async (filePath: string, saveAsContext: SaveAsCo
   return insertIndexedFileIntoList(indexedFile);
 };
 
+function advanceAfterMetadataShortcut(fileId: number, requestId: number) {
+  if (!selectMode.value && requestId === currentContentRequestId
+      && fileList.value[selectedItemIndex.value]?.id === fileId) {
+    performNavigate('next');
+  }
+}
+
 // toggle the selected file's favorite status (selectMode = false)
-const toggleFavorite = async () => {
+const toggleFavorite = async (advance = false) => {
+  const requestId = currentContentRequestId;
   if (selectedItemIndex.value >= 0) {
     const item = fileList.value[selectedItemIndex.value];
-    item.is_favorite = !item.is_favorite;
+    const previous = item.is_favorite;
+    item.is_favorite = !previous;
     // update the favorite status in the database
-    await setFileFavorite(item.id, item.is_favorite);
+    if (await setFileFavorite(item.id, item.is_favorite) === null) {
+      item.is_favorite = previous;
+      return;
+    }
     syncFileMetaToImageViewer(item.id, { is_favorite: item.is_favorite });
+    if (advance) advanceAfterMetadataShortcut(item.id, requestId);
   }
 };
 
@@ -9517,13 +9524,19 @@ const toggleSelectModeFavorite = async () => {
   await selectModeSetFavorites(shouldFavorite);
 };
 
-const setSelectedFileRating = async (rating: number) => {
+const setSelectedFileRating = async (rating: number, advance = false) => {
+  const requestId = currentContentRequestId;
   if (selectedItemIndex.value >= 0) {
     const item = fileList.value[selectedItemIndex.value];
-    const normalized = item.rating === rating ? 0 : rating;
+    const previous = item.rating;
+    const normalized = Math.max(0, Math.min(5, rating));
     item.rating = normalized;
-    await setFileRating(item.id, normalized);
+    if (await setFileRating(item.id, normalized) === null) {
+      item.rating = previous;
+      return;
+    }
     syncFileMetaToImageViewer(item.id, { rating: normalized });
+    if (advance) advanceAfterMetadataShortcut(item.id, requestId);
   }
 };
 
@@ -9548,7 +9561,8 @@ const selectModeSetRatings = async (rating: number) => {
   }
 }
 
-const setSelectedFileCullingFlag = async (cullingFlag: number) => {
+const setSelectedFileCullingFlag = async (cullingFlag: number, advance = false) => {
+  const requestId = currentContentRequestId;
   if (selectedItemIndex.value < 0) return;
   const item = fileList.value[selectedItemIndex.value];
   if (!item) return;
@@ -9562,6 +9576,7 @@ const setSelectedFileCullingFlag = async (cullingFlag: number) => {
   }
   syncFileMetaToImageViewer(item.id, { culling_flag: normalized });
   void tauriEmit('culling-status-updated', { fileIds: [item.id], cullingFlag: normalized });
+  if (advance) advanceAfterMetadataShortcut(item.id, requestId);
 };
 
 const selectModeSetCullingFlags = async (cullingFlag: number) => {
@@ -9811,6 +9826,7 @@ const selectAllInCurrentList = async () => {
       .reduce((total, size) => total + Number(size || 0), 0);
     syncSelectionVersions();
     selectMode.value = true;
+    if (isGridLayoutView.value && config.rightPanel.show) selectionPanelOpen.value = true;
     return;
   }
 
@@ -9844,6 +9860,7 @@ const selectAllInCurrentList = async () => {
   selectedSize.value = selectedFileIds.size === totalFileCount.value ? totalFileSize.value : nextSize;
   syncSelectionVersions();
   selectMode.value = true;
+  if (isGridLayoutView.value && config.rightPanel.show) selectionPanelOpen.value = true;
 };
 
 const selectNoneInCurrentList = () => {
@@ -10454,11 +10471,46 @@ function handleCollectionDeleted(collectionId: number) {
   void tauriEmit('refresh-content');
 }
 
-// Helper to yield to main thread
-const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
-
 // Track current thumbnail request to enable cancellation when switching folders
 let currentThumbRequestId = 0;
+let thumbnailRefreshVersion = 0;
+let thumbnailPriorities = new Map<number, number>();
+const thumbnailScheduler = createThumbnailScheduler({
+  // Cache-read IPC has a separate budget from backend background generation.
+  priority: (task: any) => task.requestId !== currentThumbRequestId ? null
+    : thumbnailPriorities.get(Number(task.file.id)) ?? (task.viewportBound ? null : 2),
+  loadBatch: (tasks: any[]) => getFileThumbs(tasks.map(({ file }) => ({
+    fileId: file.id, filePath: file.file_path, fileType: file.file_type,
+    orientation: file.e_orientation || 0, albumId: file.album_id || 0,
+  })), tasks[0].thumbnailSize, false, tasks[0].trustCached),
+});
+
+function invalidateThumbnailRequests() {
+  currentThumbRequestId++;
+  thumbnailPriorities.clear();
+  thumbnailScheduler.refresh();
+}
+
+function refreshThumbnailViewport() {
+  const start = Math.max(0, lastVisibleRange.start);
+  const end = lastVisibleRange.end >= start ? lastVisibleRange.end
+    : start + Math.max(1, visibleItemCount.value) - 1;
+  const buffer = Math.max(40, Math.min(visibleItemCount.value, 120));
+  const rows = gridRows.value;
+  const priorities = new Map<number, number>();
+  for (let index = Math.max(0, start - buffer); index <= Math.min(rows.length - 1, end + buffer); index++) {
+    const row = rows[index];
+    const file = isItemRow(row) ? row.file : row;
+    if (isRealFileItem(file)) priorities.set(Number(file.id), index >= start && index <= end ? 0 : 1);
+  }
+  thumbnailPriorities = priorities;
+  thumbnailScheduler.refresh();
+}
+
+onBeforeUnmount(() => {
+  currentThumbRequestId++;
+  thumbnailScheduler.dispose();
+});
 // A reconnected album can safely show its existing local thumbnail cache first.
 // A later scan/sync remains responsible for detecting files changed while offline.
 let trustCachedThumbnailRequestId = -1;
@@ -10482,115 +10534,50 @@ function preserveLoadedThumbnails(files: any[]) {
   });
 }
 
-// Get the thumbnail for the files (non-blocking, runs in background)
-// Automatically cancels when a new request starts (e.g., switching folders)
-async function getFileListThumb(files: any[], offset = 0, concurrencyLimit = 4, bustCache = false) {
-  // Use current request ID to check for cancellation
+// All grid loads share one queue with centrally capped batch size and concurrency.
+async function getFileListThumb(files: any[], { bustCache = false, viewportBound = true } = {}) {
   const requestId = currentThumbRequestId;
   const thumbnailSize = config.settings.thumbnailSize;
-  const batchSize = Math.max(1, concurrencyLimit);
+  const trustCached = requestId === trustCachedThumbnailRequestId;
+  const refreshVersion = bustCache ? ++thumbnailRefreshVersion : 0;
+  const group = `${requestId}:${thumbnailSize}:${trustCached}:${refreshVersion}`;
+  refreshThumbnailViewport();
 
-  const applyThumbToFile = (file: any, thumb: any) => {
-    if (!thumb) return;
-
-    if (thumb.error_code === 0 || thumb.error_code === 2) {
-      file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, bustCache, thumbnailSize, file.file_path, Number(file.modified_at || 0));
+  const candidates = files.filter((file: any) => isRealFileItem(file)
+    && (!file.thumbnail || file.rawThumbnailStale)
+    && (!viewportBound || thumbnailPriorities.has(Number(file.id))));
+  const load = async (file: any) => {
+    const cached = getCachedThumbnailDataUrl(file.id, thumbnailSize);
+    if (cached) {
+      file.thumbnail = cached;
       file.rawThumbnailStale = false;
-    } else if (thumb.error_code === 1) {
-      file.rawThumbnailStale = false;
-      file.thumbnail = thumbnailPlaceholder;
+      return;
     }
-  };
-
-  const processBatch = async (startIndex: number) => {
-    if (requestId !== currentThumbRequestId) return;
-
-    const endIndex = Math.min(startIndex + batchSize, files.length);
-    const batchFiles: any[] = [];
-
-    for (let i = startIndex; i < endIndex; i++) {
-      const file = files[i];
-      if (!file || (file.thumbnail && !file.rawThumbnailStale)) continue;
-
-      const cached = getCachedThumbnailDataUrl(file.id, thumbnailSize);
-      if (cached) {
-        file.thumbnail = cached;
-        file.rawThumbnailStale = false;
-        continue;
-      }
-
-      batchFiles.push(file);
-    }
-
-    if (batchFiles.length === 0) return;
-
-    const requests = batchFiles.map((file: any) => ({
-      fileId: file.id,
-      filePath: file.file_path,
-      fileType: file.file_type,
-      orientation: file.e_orientation || 0,
-      albumId: file.album_id || 0,
-    }));
-
     try {
-      const thumbs = await getFileThumbs(
-        requests,
-        thumbnailSize,
-        false,
-        requestId === trustCachedThumbnailRequestId,
-      );
-
-      if (requestId !== currentThumbRequestId) return;
-
-      for (let j = 0; j < batchFiles.length; j++) {
-        applyThumbToFile(batchFiles[j], Array.isArray(thumbs) ? thumbs[j] : null);
+      // group includes the refresh version, keeping forced refreshes independent.
+      const key = `${group}:${file.id}:${file.modified_at || 0}`;
+      const thumb = await thumbnailScheduler.request(key, group, {
+        file, requestId, thumbnailSize, trustCached, viewportBound,
+      });
+      if (!thumb || requestId !== currentThumbRequestId) return;
+      if (thumb.error_code === 0 || thumb.error_code === 2) {
+        file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, bustCache, thumbnailSize, file.file_path, Number(file.modified_at || 0), !file.cloud_only);
+        file.rawThumbnailStale = false;
+      } else if (thumb.error_code === 1) {
+        file.rawThumbnailStale = false;
+        file.thumbnail = thumbnailPlaceholder;
       }
     } catch (error) {
-      console.log('Error fetching thumbnails:', error);
+      console.log('Error fetching thumbnail:', error);
     }
   };
-
-  const runWithConcurrencyLimit = async (files: any[]) => {
-    const queue: Promise<void>[] = [];
-    let activeRequests = 0;
-
-    for (let i = offset; i < files.length; i += batchSize) {
-      if (requestId !== currentThumbRequestId) {
-        console.log(`Thumbnail generation cancelled (request ${requestId} superseded by ${currentThumbRequestId})`);
-        return;
-      }
-
-      // Wait for a slot to free up before starting a new batch
-      while (activeRequests >= concurrencyLimit) {
-        await Promise.race(queue);
-      }
-
-      const batchPromise = processBatch(i)
-        .then(() => {
-          queue.splice(queue.indexOf(batchPromise), 1);
-          activeRequests--;
-        })
-        .catch(() => {
-          queue.splice(queue.indexOf(batchPromise), 1);
-          activeRequests--;
-        });
-
-      queue.push(batchPromise);
-      activeRequests++;
-
-      // Yield to main thread periodically to keep UI responsive
-      if (i > 0 && i % (batchSize * 10) === 0) {
-        await yieldToMain();
-      }
-    }
-
-    // Wait for remaining batches (only if not cancelled)
-    if (requestId === currentThumbRequestId && queue.length > 0) {
-      await Promise.all(queue);
-    }
-  };
-
-  return runWithConcurrencyLimit(files);
+  // Large explicit refreshes retain offscreen demand, but enqueue just one batch
+  // at a time. Visible work can take priority before the next batch is submitted.
+  const windowSize = viewportBound ? Math.max(1, candidates.length) : 4;
+  for (let start = 0; start < candidates.length; start += windowSize) {
+    if (requestId !== currentThumbRequestId) return;
+    await Promise.all(candidates.slice(start, start + windowSize).map(load));
+  }
 }
 
 // Open the image viewer window

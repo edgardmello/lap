@@ -118,7 +118,7 @@
               >
                 <img v-if="group.representative?.thumbnail" :src="group.representative.thumbnail" class="h-full w-full object-cover" loading="lazy" />
                 <div v-else class="h-full w-full skeleton"></div>
-                <div class="absolute left-1 top-1 rounded bg-base-300/85 px-1.5 py-0.5 text-[10px] font-semibold text-base-content/70 backdrop-blur-sm">
+                <div class="absolute left-0.5 top-0.5 thumb-badge">
                   {{ group.file_count }}
                 </div>
               </button>
@@ -137,7 +137,7 @@
               <span class="text-[10px] uppercase tracking-widest font-bold text-base-content/30">
                 {{ $t('info_panel.dedup.actions_title') }}
               </span>
-              <span v-if="selectedSimilarCount > 0" class="ml-auto text-[10px] font-semibold text-base-content/30">
+              <span v-if="selectedSimilarCount > 0" class="ml-auto text-xs text-base-content/70">
                 {{ $t('toolbar.filter.select_count', { count: selectedSimilarCount.toLocaleString() }) }} · {{ formatFileSize(selectedSimilarBytes) }}
               </span>
             </div>
@@ -320,6 +320,9 @@
               {{ totalGroupCount.toLocaleString() }}
             </span>
           </div>
+          <div v-if="skippedCloudOnlyCount > 0" class="px-1 text-xs text-base-content/50">
+            {{ $t('info_panel.dedup.skipped_cloud_only', { count: skippedCloudOnlyCount.toLocaleString() }) }}
+          </div>
           <div
             ref="duplicateGroupsScrollRef"
             class="min-h-0 flex-1 overflow-y-auto py-1"
@@ -341,7 +344,7 @@
                   loading="lazy"
                 />
                 <div v-else class="h-full w-full skeleton"></div>
-                <div class="absolute left-1 top-1 rounded bg-base-300/85 px-1.5 py-0.5 text-[10px] font-semibold text-base-content/70 backdrop-blur-sm">
+                <div class="absolute left-0.5 top-0.5 thumb-badge">
                   {{ group.file_count }}
                 </div>
                 <div
@@ -369,7 +372,7 @@
             <span class="text-[10px] uppercase tracking-widest font-bold text-base-content/30">
               {{ $t('info_panel.dedup.actions_title') }}
             </span>
-            <span v-if="selectedDeleteCount > 0" class="ml-auto text-[10px] font-semibold text-base-content/30">
+            <span v-if="selectedDeleteCount > 0" class="ml-auto text-xs text-base-content/70">
               {{ $t('toolbar.filter.select_count', { count: selectedDeleteCount.toLocaleString() }) }} · {{ formatFileSize(selectedDeleteBytes) }}
             </span>
           </div>
@@ -602,6 +605,8 @@ const totalDuplicateFileCount = ref(0);
 const totalReclaimableBytes = ref(0);
 const albumRootPaths = ref<Map<number, string>>(new Map());
 const dedupStatusPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
+// Online-only files the last scan left unhashed (hashing would download them).
+const skippedCloudOnlyCount = ref(0);
 const isPollingDedupStatus = ref(false);
 const loadedDuplicateGroupCount = ref(DEDUP_THUMBNAIL_PAGE_SIZE);
 const duplicateGroupsScrollRef = ref<HTMLElement | null>(null);
@@ -872,7 +877,7 @@ async function hydrateSimilarThumbnails(groups: any[], activeGroupId: number | n
       null,
       file.album_id || 0,
     );
-    file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, false, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0));
+    file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, false, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0), !file.cloud_only);
   }));
 }
 
@@ -1363,7 +1368,7 @@ async function hydrateGroupThumbnails(groups: any[], activeGroupId: number | nul
           null,
           file.album_id || 0,
         );
-        file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, false, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0));
+        file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, false, config.settings.thumbnailSize, file.file_path, Number(file.modified_at || 0), !file.cloud_only);
       })());
     }
   }
@@ -1525,6 +1530,7 @@ async function handleDedupScanSettled(allowWhileStarting = false) {
     showDedupScanError();
     return;
   }
+  skippedCloudOnlyCount.value = Number(status.skipped || 0);
   await fetchGroups();
   if (gen !== scanGeneration.value) return;
   // Only clear the loading flag after results are ready, so the

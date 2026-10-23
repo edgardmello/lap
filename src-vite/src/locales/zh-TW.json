@@ -54,6 +54,12 @@
     "database_corrupted_hint": "請嘗試切換到其他媒體庫。"
   },
   "album": {
+    "drop": {
+      "add": "拖入資料夾以新增",
+      "separate": "請分別拖入檔案與資料夾。",
+      "confirm_folder": "選擇資料夾：{name}",
+      "folders_only": "請拖入資料夾。"
+    },
     "album_list": "相簿",
     "search_folders": "搜尋資料夾",
     "favorite_folders_only": "僅我的最愛資料夾",
@@ -150,6 +156,7 @@
       "validation_name": "請輸入智慧相簿名稱。",
       "validation_rule": "請至少新增一條完整規則。",
       "fields": {
+        "folder_name": "資料夾名稱",
         "name": "檔案名稱",
         "file_type": "檔案類型",
         "media_subtype": "媒體子類型",
@@ -225,6 +232,8 @@
     }
   },
   "offline": {
+    "cloud_only": "僅線上可用",
+    "cloud_only_pending": "僅線上可用 — 檔案資訊待補齊",
     "original_unavailable": "原始檔案暫時無法存取",
     "requires_original": "需要原始檔案，請連接儲存裝置後使用此操作。"
   },
@@ -461,7 +470,8 @@
         "大小",
         "尺寸",
         "長度",
-        "隨機"
+        "隨機",
+        "加入順序"
       ],
       "similarity": "相似度",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "可釋放",
       "groups_title": "重複群組",
+      "skipped_cloud_only": "已略過 {count} 個僅線上可用的檔案",
       "actions_title": "動作",
       "compare": "比較",
       "rescan": "重新掃描",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "在 Finder 中顯示...",
       "reveal_in_file_explorer": "在檔案總管中顯示...",
       "refresh_file_info": "重新整理檔案資訊",
+      "index_cloud_files": "下載、建立索引並釋放空間",
       "set_album_cover": "設為相簿封面",
       "set_as": "設為",
       "set_desktop_wallpaper": "設為桌面桌布",
@@ -1001,7 +1013,10 @@
       "cancelled": "已取消",
       "complete": "完成",
       "succeeded": "已更新：{count}",
-      "failed": "失敗：{count}"
+      "failed": "失敗：{count}",
+      "release_requested": "已要求釋放：{count}",
+      "kept_local": "保留在此裝置：{count}",
+      "kept_local_hint": "一律保留在此裝置上的檔案，或 Windows 不允許 Lap 釋放空間的檔案（受控資料夾存取）。"
     },
     "image_editor": {
       "title": "編輯",
@@ -1577,7 +1592,6 @@
         "zoom_out": "縮小",
         "zoom_fit": "切換實際大小 / 符合視窗",
         "cycle_background": "切換背景",
-        "toggle_slideshow": "播放 / 暫停投影片",
         "open_new_window": "在新視窗檢視",
         "open_external_app": "用外部應用程式開啟",
         "edit_image": "編輯",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "永久刪除",
         "refresh_file_info": "重新整理檔案資訊",
         "print": "列印",
-        "toggle_favorite": "切換我的最愛",
-        "set_clear_rating": "設定 / 清除評分",
-        "mark_pick": "標記為入選",
-        "mark_rejected": "標記為剔除",
-        "mark_unreviewed": "標記為未檢視",
+        "toggle_favorite": "加入最愛 / 取消最愛",
+        "toggle_favorite_and_next": "加入最愛 / 取消最愛 → 下一張",
+        "set_clear_rating": "評分",
+        "set_clear_rating_and_next": "評分 → 下一張",
+        "mark_pick": "挑片 · 入選",
+        "mark_pick_and_next": "挑片 · 入選 → 下一張",
+        "mark_rejected": "挑片 · 剔除",
+        "mark_rejected_and_next": "挑片 · 剔除 → 下一張",
+        "mark_unreviewed": "挑片 · 未檢視",
+        "mark_unreviewed_and_next": "挑片 · 未檢視 → 下一張",
         "clear_rating": "清除評分",
         "rate_one": "評為 1 星",
         "rate_two": "評為 2 星",
         "rate_three": "評為 3 星",
         "rate_four": "評為 4 星",
         "rate_five": "評為 5 星",
-        "edit_tags": "編輯標籤",
-        "edit_collections": "編輯收藏",
-        "edit_comment": "編輯備註",
+        "edit_tags": "標籤",
+        "edit_collections": "收藏",
+        "edit_comment": "備註",
         "rotate": "旋轉檢視（順時針）",
         "rotate_counterclockwise": "旋轉檢視（逆時針）",
         "thumbnail_increase": "增大縮圖",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "進階",
-      "section_thumbnail_cache": "縮圖快取",
-      "thumbnail_quality": "縮圖品質",
-      "thumbnail_quality_hint": "設定產生縮圖的解析度。較高設定較清晰，但產生較慢且占用較多磁碟空間",
-      "section_map": "地圖",
-      "map_provider": "地圖提供者",
-      "map_provider_hint": "選擇地圖檢視所使用的地圖服務",
-      "map_provider_options": [
-        "全球（預設）",
-        "中國（天地圖）"
-      ],
-      "tianditu_token": "天地圖 API 權杖",
-      "tianditu_token_hint": "天地圖圖磚所需",
-      "tianditu_token_placeholder": "貼上你的權杖",
-      "tianditu_token_status_saved": "已儲存",
-      "tianditu_token_status_empty": "未設定",
-      "thumbnail_quality_options": [
-        "低（256 px）",
-        "標準（512 px）",
-        "高（1024 px）"
-      ],
-      "section_external_apps": "外部應用程式",
-      "manage_external_apps": "管理外部應用程式",
-      "external_image_editor": "開啟相片於",
-      "external_video_app": "開啟影片於",
-      "external_app_not_selected": "未選擇應用程式",
-      "choose_app": "選擇",
-      "clear_app": "清除",
-      "default_app": "預設",
-      "set_default_app": "設為預設",
+      "external_app": {
+        "section_external_apps": "外部應用程式",
+        "manage_external_apps": "管理外部應用程式",
+        "external_image_editor": "開啟相片於",
+        "external_video_app": "開啟影片於",
+        "external_app_not_selected": "未選擇應用程式",
+        "choose_app": "選擇",
+        "clear_app": "清除",
+        "default_app": "預設",
+        "set_default_app": "設為預設"
+      },
       "section_diagnostics": "診斷",
-      "debug_mode": "除錯模式"
+      "debug_mode": "除錯模式",
+      "map": {
+        "section_map": "地圖",
+        "map_provider": "地圖提供者",
+        "map_provider_hint": "選擇地圖檢視所使用的地圖服務",
+        "map_provider_options": [
+          "全球（預設）",
+          "中國（天地圖）"
+        ],
+        "tianditu_token": "天地圖 API 權杖",
+        "tianditu_token_hint": "天地圖圖磚所需",
+        "tianditu_token_placeholder": "貼上你的權杖",
+        "tianditu_token_status_saved": "已儲存",
+        "tianditu_token_status_empty": "未設定"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "正在復原…",
+        "cancelled": "已取消，原快取已保留。",
+        "new_location": "新位置：{path}",
+        "migrating": "正在遷移縮圖…",
+        "migration_hint": "將遷移所有圖庫的縮圖，全部成功後新位置才會生效。取消將保留目前的快取位置。",
+        "migration_progress": "遷移進度",
+        "ready": "準備遷移",
+        "start": "開始",
+        "cancelling": "正在取消…",
+        "rebuild_message": "原縮圖快取位置無法使用。是否繼續而不移轉舊檔案？縮圖將在新位置依需要重新產生，圖庫資料和原始照片不受影響，原磁碟上的快取檔案也不會被刪除。",
+        "rebuild_confirm": "繼續並重新產生",
+        "section_thumbnail_cache": "縮圖快取",
+        "thumbnail_quality": "修改縮圖解析度",
+        "thumbnail_quality_hint": "解析度越高，縮圖越清晰，但產生較慢且占用較多磁碟空間",
+        "thumbnail_quality_options": [
+          "低（256 px）",
+          "標準（512 px）",
+          "高（1024 px）"
+        ],
+        "unavailable": "快取位置無法使用，請連接原磁碟後再使用或移轉快取。",
+        "current_location": "變更快取位置",
+        "counting": "正在統計快取檔案…",
+        "finishing": "正在完成快取移轉…",
+        "success": "縮圖快取位置已變更",
+        "cleanup_warning": "快取已移轉，但部分舊檔案無法刪除：",
+        "busy": "請等待縮圖快取移轉完成。"
+      }
     },
     "database": {
       "title": "儲存",

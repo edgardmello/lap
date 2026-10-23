@@ -37,7 +37,7 @@
                 <div>{{ $t('settings.general.select_language') }}</div>
                 <div v-if="config.settings.language !== 'en'" class="text-xs text-base-content/30">Select language</div>
               </div>
-              <select class="select  select-bordered select-sm min-w-32" :value="config.settings.language" @change="config.setLanguage(($event.target as HTMLSelectElement).value)">
+              <select class="select  select-bordered select-sm min-w-32" :value="config.settings.language" @change="changeLanguage(($event.target as HTMLSelectElement).value)">
                 <option v-for="(lang, index) in languages" :key="index" :value="lang.value">{{ lang.label }}</option>
               </select>
             </div>
@@ -431,37 +431,39 @@
                   {{ $t('settings.image_search.test_connection') }}
                 </button>
               </div>
-              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.omlx_coverage') }}</div>
-                </div>
-                <div class="text-sm text-base-content/60 shrink-0">{{ embeddingCoverageText }}</div>
-              </div>
-              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.reindex_embeddings') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.reindex_embeddings_hint') }}</div>
-                  <div v-if="reindexRecommended && !reindexRunning" class="text-xs text-warning">
-                    {{ $t('settings.image_search.reindex_recommended') }}
-                  </div>
-                  <div v-if="reindexVisible" class="text-xs text-base-content/50">
-                    {{ reindexProgressText }}
-                  </div>
-                  <progress
-                    v-if="reindexRunning"
-                    class="progress progress-primary h-1.5 w-full max-w-64"
-                    :value="reindexStatus?.done || 0"
-                    :max="reindexStatus?.total || 1"
-                  ></progress>
-                </div>
-                <button v-if="!reindexRunning" class="btn btn-outline btn-xs h-6 min-h-0 shrink-0" @click="onStartEmbeddingReindex">
-                  {{ $t('settings.image_search.reindex_start') }}
-                </button>
-                <button v-else class="btn btn-ghost btn-xs h-6 min-h-0 shrink-0 text-base-content/30 hover:text-base-content" @click="onCancelEmbeddingReindex">
-                  {{ $t('msgbox.cancel') }}
-                </button>
-              </div>
             </template>
+            <!-- Each provider replaces the stored vectors, so re-indexing is
+                 available for the built-in provider too (e.g. after switching back). -->
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_search.omlx_coverage') }}</div>
+              </div>
+              <div class="text-sm text-base-content/60 shrink-0">{{ embeddingCoverageText }}</div>
+            </div>
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_search.reindex_embeddings') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.image_search.reindex_embeddings_hint') }}</div>
+                <div v-if="reindexRecommended && !reindexRunning" class="text-xs text-warning">
+                  {{ $t('settings.image_search.reindex_recommended') }}
+                </div>
+                <div v-if="reindexVisible" class="text-xs text-base-content/50">
+                  {{ reindexProgressText }}
+                </div>
+                <progress
+                  v-if="reindexRunning"
+                  class="progress progress-primary h-1.5 w-full max-w-64"
+                  :value="reindexStatus?.done || 0"
+                  :max="reindexStatus?.total || 1"
+                ></progress>
+              </div>
+              <button v-if="!reindexRunning" class="btn btn-outline btn-xs h-6 min-h-0 shrink-0" @click="onStartEmbeddingReindex">
+                {{ $t('settings.image_search.reindex_start') }}
+              </button>
+              <button v-else class="btn btn-ghost btn-xs h-6 min-h-0 shrink-0 text-base-content/30 hover:text-base-content" @click="onCancelEmbeddingReindex">
+                {{ $t('msgbox.cancel') }}
+              </button>
+            </div>
           </div>
 
           <!-- image search -->
@@ -579,60 +581,48 @@
           <!-- thumbnail cache -->
           <div class="rounded-box p-2 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
             <div class="flex items-center gap-2 text-base-content/30">
-              <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.advanced.section_thumbnail_cache') }}</span>
+              <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.advanced.thumbnail_cache.section_thumbnail_cache') }}</span>
             </div>
+
+            <!-- cache location -->
             <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
               <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                <div>{{ $t('settings.advanced.thumbnail_quality') }}</div>
-                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.thumbnail_quality_hint') }}</div>
+                <div>{{ $t('settings.advanced.thumbnail_cache.current_location') }}</div>
+                <div class="text-xs text-base-content/30 truncate" :title="thumbnailCacheDir">
+                  {{ hasCustomThumbnailCache ? thumbnailCacheDir : $t('settings.database.system_default') }}
+                </div>
+                <div v-if="!thumbnailCacheAvailable" class="text-xs text-warning" role="status">
+                  {{ $t('settings.advanced.thumbnail_cache.unavailable') }}
+                </div>
+              </div>
+              <div class="shrink-0 flex items-center gap-2">
+                <button
+                  class="btn btn-sm btn-ghost rounded-box bg-base-100 border border-base-content/30 text-base-content/70 hover:text-base-content"
+                  :disabled="isChangingThumbnailCache || isChangingDbStorage"
+                  @click="chooseThumbnailCacheDir"
+                >
+                  {{ isChangingThumbnailCache ? $t('tooltip.loading') : $t('settings.database.change_location') }}
+                </button>
+                <TButton
+                  v-if="hasCustomThumbnailCache"
+                  :icon="IconRestore"
+                  :buttonSize="'small'"
+                  :disabled="isChangingThumbnailCache || isChangingDbStorage"
+                  :tooltip="$t('settings.database.restore_default_location')"
+                  @click="prepareThumbnailMigration(null)"
+                />
+              </div>
+            </div>
+
+            <!-- cache quality -->
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.advanced.thumbnail_cache.thumbnail_quality') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.thumbnail_cache.thumbnail_quality_hint') }}</div>
               </div>
               <select class="select select-bordered select-sm min-w-40 shrink-0" :value="config.settings.thumbnailSize" @change="onThumbnailSizeChange">
                 <option v-for="option in thumbnailQualityOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
-            </div>
-          </div>
-
-          <!-- map -->
-          <div class="rounded-box p-2 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
-            <div class="flex items-center gap-2 text-base-content/30">
-              <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.advanced.section_map') }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                <div>{{ $t('settings.advanced.map_provider') }}</div>
-                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.map_provider_hint') }}</div>
-              </div>
-              <select class="select select-bordered select-sm min-w-40 shrink-0" v-model="config.settings.mapProvider">
-                <option v-for="option in mapProviderOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
-            </div>
-            <div v-if="config.settings.mapProvider === 'tianditu'" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                <div>{{ $t('settings.advanced.tianditu_token') }}</div>
-                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.tianditu_token_hint') }}</div>
-              </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <div class="relative">
-                  <input
-                    v-model="tiandituTokenInput"
-                    class="input input-bordered input-sm min-w-40 w-48"
-                    type="text"
-                    spellcheck="false"
-                    autocomplete="off"
-                    :placeholder="$t('settings.advanced.tianditu_token_placeholder')"
-                    @input="onTiandituTokenInput"
-                    @keydown.enter.prevent="commitTiandituToken"
-                    @blur="commitTiandituToken"
-                  >
-                </div>
-                <span
-                  v-if="tiandituTokenStatus !== 'idle'"
-                  class="min-w-20 text-xs whitespace-nowrap"
-                  :class="tiandituTokenStatusClass"
-                >
-                  {{ tiandituTokenStatusLabel }}
-                </span>
-              </div>
             </div>
           </div>
 
@@ -652,7 +642,7 @@
               <div class="shrink-0 flex items-center gap-2">
                 <button
                   class="btn btn-sm btn-ghost rounded-box bg-base-100 border border-base-content/30 text-base-content/70 hover:text-base-content"
-                  :disabled="isChangingDbStorage"
+                  :disabled="isChangingDbStorage || isChangingThumbnailCache"
                   @click="selectDbStorageDir"
                 >
                   {{ isChangingDbStorage ? $t('tooltip.loading') : $t('settings.database.change_location') }}
@@ -661,7 +651,7 @@
                   v-if="hasCustomDbStorage"
                   :icon="IconRestore"
                   :buttonSize="'small'"
-                  :disabled="isChangingDbStorage"
+                  :disabled="isChangingDbStorage || isChangingThumbnailCache"
                   :tooltip="$t('settings.database.restore_default_location')"
                   @click="restoreDefaultDbStorageDir"
                 />
@@ -695,8 +685,52 @@
             </div>
           </div>
 
-          <!-- diagnostics -->
+          <!-- map -->
           <div class="rounded-box p-2 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
+            <div class="flex items-center gap-2 text-base-content/30">
+              <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.advanced.map.section_map') }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.advanced.map.map_provider') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.map.map_provider_hint') }}</div>
+              </div>
+              <select class="select select-bordered select-sm min-w-40 shrink-0" v-model="config.settings.mapProvider">
+                <option v-for="option in mapProviderOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </div>
+            <div v-if="config.settings.mapProvider === 'tianditu'" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.advanced.map.tianditu_token') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.map.tianditu_token_hint') }}</div>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="tiandituTokenInput"
+                    class="input input-bordered input-sm min-w-40 w-48"
+                    type="text"
+                    spellcheck="false"
+                    autocomplete="off"
+                    :placeholder="$t('settings.advanced.map.tianditu_token_placeholder')"
+                    @input="onTiandituTokenInput"
+                    @keydown.enter.prevent="commitTiandituToken"
+                    @blur="commitTiandituToken"
+                  >
+                </div>
+                <span
+                  v-if="tiandituTokenStatus !== 'idle'"
+                  class="min-w-20 text-xs whitespace-nowrap"
+                  :class="tiandituTokenStatusClass"
+                >
+                  {{ tiandituTokenStatusLabel }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- diagnostics -->
+          <!-- <div class="rounded-box p-2 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
             <div class="flex items-center gap-2 text-base-content/30">
               <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.advanced.section_diagnostics') }}</span>
             </div>
@@ -706,7 +740,7 @@
               </div>
               <input type="checkbox" class="toggle toggle-primary toggle-sm" v-model="config.settings.debugMode" />
             </div>
-          </div>
+          </div> -->
         </div>
 
         <!-- Shortcuts Tab -->
@@ -720,20 +754,22 @@
               <span class="font-bold uppercase text-[10px] tracking-widest">{{ section.title }}</span>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-1">
-              <div
-                v-for="item in section.items"
-                :key="item.actionId"
-                class="min-h-9 flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200"
-              >
-                <div class="min-w-0 text-sm leading-5 truncate">{{ item.label }}</div>
-                <div class="shrink-0 flex items-center gap-1">
-                  <span
-                    v-for="(key, keyIndex) in item.keys"
-                    :key="`${item.actionId}-${keyIndex}-${key}`"
-                    class="min-w-7 h-7 px-2 inline-flex items-center justify-center rounded-box border border-base-content/10 bg-base-100/40 text-xs font-semibold text-base-content/30 shadow-sm"
-                  >
-                    {{ key }}
-                  </span>
+              <div v-for="item in section.items" :key="item.actionId">
+                <div
+                  v-for="(row, rowIndex) in item.rows"
+                  :key="rowIndex"
+                  class="min-h-9 flex items-center justify-between gap-4 px-1 py-1 rounded-box hover:bg-base-100/10 transition-colors duration-200"
+                >
+                  <div class="min-w-0 text-sm leading-5">{{ row.label }}</div>
+                  <div class="shrink-0 flex items-center gap-1">
+                    <span
+                      v-for="(key, keyIndex) in row.keys"
+                      :key="keyIndex"
+                      class="min-w-7 h-7 px-2 inline-flex items-center justify-center rounded-box border border-base-content/10 bg-base-100/40 text-xs font-semibold text-base-content/30 shadow-sm"
+                    >
+                      {{ key }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -746,6 +782,33 @@
 
       </div>
     </div>
+
+    <ModalDialog
+      v-if="showThumbnailMigrationDialog"
+      :title="$t('settings.advanced.thumbnail_cache.current_location')"
+      :width="480"
+      @cancel="cancelThumbnailMigration"
+    >
+      <div class="space-y-3">
+        <p class="text-xs text-base-content/60">{{ $t('settings.advanced.thumbnail_cache.migration_hint') }}</p>
+        <div class="text-xs text-base-content/75 break-all">{{ $t('settings.advanced.thumbnail_cache.new_location', { path: pendingThumbnailCacheDir === null ? $t('settings.database.system_default') : `${pendingThumbnailCacheDir}/lap-thumbnail-cache` }) }}</div>
+        <section class="rounded-box p-2 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
+          <div class="font-bold uppercase text-[10px] tracking-widest text-base-content/30">{{ $t('settings.advanced.thumbnail_cache.migration_progress') }}</div>
+          <div class="space-y-2 px-1 text-xs" role="status" aria-live="polite">
+            <div class="flex items-center justify-between gap-2 text-base-content/75">
+              <span>{{ thumbnailMigrationStatusText }}</span>
+              <span v-if="thumbnailMigrationPreview === 'ready' && thumbnailCacheProgress.phase !== 'rolling_back'" class="tabular-nums shrink-0">{{ formatMigrationCount(thumbnailCacheProgress.completed) }} / {{ formatMigrationCount(thumbnailCacheProgress.total) }}</span>
+            </div>
+            <progress class="progress progress-primary w-full" :value="thumbnailCacheProgress.completed" :max="Math.max(thumbnailCacheProgress.total, 1)" :aria-label="$t('settings.advanced.thumbnail_cache.migration_progress')"></progress>
+            <p v-if="thumbnailMigrationError" class="text-error/70 break-words" role="alert">{{ thumbnailMigrationError }}</p>
+          </div>
+        </section>
+      </div>
+      <div class="mt-4 flex justify-end gap-4">
+        <button class="t-button-default" :disabled="thumbnailMigrationCancelling" @click="cancelThumbnailMigration">{{ $t(thumbnailMigrationCancelled ? 'msgbox.close' : 'msgbox.cancel') }}</button>
+        <button class="t-button-primary" :disabled="isChangingThumbnailCache || thumbnailMigrationPreview === 'counting' || thumbnailMigrationPreview === 'error'" @click="moveThumbnailCache(pendingThumbnailCacheDir)">{{ $t('settings.advanced.thumbnail_cache.start') }}</button>
+      </div>
+    </ModalDialog>
 
     <MessageBox
       v-if="showChangeDbStorageDialog"
@@ -793,6 +856,10 @@ import { config, libConfig } from '@/common/config';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
 import {
+  getThumbnailCacheLocation,
+  getThumbnailCacheMigrationCount,
+  changeThumbnailCacheLocation,
+  cancelThumbnailCacheMigration,
   getDbStorageDir,
   changeDbStorageDir,
   resetDbStorageDir,
@@ -819,6 +886,7 @@ import { IconClose, IconRestore } from '@/common/icons';
 import TitleBar from '@/components/TitleBar.vue';
 import SettingsAbout from '@/components/SettingsAbout.vue';
 import MessageBox from '@/components/MessageBox.vue';
+import ModalDialog from '@/components/ModalDialog.vue';
 import BackupDialog from '@/components/BackupDialog.vue';
 import RestoreDialog from '@/components/RestoreDialog.vue';
 import TButton from '@/components/TButton.vue';
@@ -846,6 +914,34 @@ const rawPreviewFields = [
 const appWindow = getCurrentWebviewWindow()
 let unlistenCloseRequested: (() => void) | null = null;
 
+const thumbnailCacheDir = ref('');
+const thumbnailCacheAvailable = ref(true);
+const hasCustomThumbnailCache = ref(false);
+const isChangingThumbnailCache = ref(false);
+const showThumbnailMigrationDialog = ref(false);
+const pendingThumbnailCacheDir = ref<string | null>(null);
+const thumbnailMigrationCancelling = ref(false);
+const thumbnailMigrationCancelled = ref(false);
+const thumbnailMigrationError = ref('');
+const thumbnailMigrationPreview = ref<'counting' | 'ready' | 'unavailable' | 'error'>('counting');
+let thumbnailMigrationPreviewRequest = 0;
+let thumbnailMigrationOperationId = '';
+const thumbnailCacheProgress = ref({ phase: 'counting', completed: 0, total: 0 });
+const migrationCountFormatter = computed(() => new Intl.NumberFormat(locale.value));
+const formatMigrationCount = (count: number) => migrationCountFormatter.value.format(count);
+const thumbnailMigrationStatusText = computed(() => {
+  if (thumbnailMigrationCancelled.value) return t('settings.advanced.thumbnail_cache.cancelled');
+  if (thumbnailCacheProgress.value.phase === 'rolling_back') return t('settings.advanced.thumbnail_cache.rolling_back');
+  if (thumbnailMigrationCancelling.value) return t('settings.advanced.thumbnail_cache.cancelling');
+  if (isChangingThumbnailCache.value) {
+    const phase = thumbnailCacheProgress.value.phase;
+    return t(`settings.advanced.thumbnail_cache.${phase === 'copying' ? 'migrating' : phase === 'finishing' ? 'finishing' : 'counting'}`);
+  }
+  if (thumbnailMigrationPreview.value === 'counting') return t('settings.advanced.thumbnail_cache.counting');
+  if (thumbnailMigrationPreview.value === 'unavailable') return t('settings.advanced.thumbnail_cache.unavailable');
+  if (thumbnailMigrationPreview.value === 'error') return '';
+  return t('settings.advanced.thumbnail_cache.ready');
+});
 const dbStorageDir = ref('');
 const isChangingDbStorage = ref(false);
 const hasCustomDbStorage = ref(false);
@@ -957,7 +1053,7 @@ const wheelOptions = computed(() => {
 });
 
 const thumbnailQualityOptions = computed(() => {
-  const labels = localeMsg.value.settings.advanced.thumbnail_quality_options || [
+  const labels = localeMsg.value.settings.advanced.thumbnail_cache.thumbnail_quality_options || [
     'Low(256px)',
     'Standard(512px)',
     'High(1024px)',
@@ -970,7 +1066,7 @@ const thumbnailQualityOptions = computed(() => {
 });
 
 const mapProviderOptions = computed(() => {
-  const labels = localeMsg.value.settings.advanced.map_provider_options || [
+  const labels = localeMsg.value.settings.advanced.map.map_provider_options || [
     'Global (default)',
     'China (Tianditu)',
   ];
@@ -982,8 +1078,8 @@ const mapProviderOptions = computed(() => {
 
 const tiandituTokenStatusLabel = computed(() => {
   const labels: Record<string, string> = {
-    saved: t('settings.advanced.tianditu_token_status_saved'),
-    empty: t('settings.advanced.tianditu_token_status_empty'),
+    saved: t('settings.advanced.map.tianditu_token_status_saved'),
+    empty: t('settings.advanced.map.tianditu_token_status_empty'),
   };
   return labels[tiandituTokenStatus.value] || '';
 });
@@ -1198,6 +1294,7 @@ const faceClusterOptions = computed(() => {
 type ShortcutDisplayItem = {
   actionId: ShortcutActionId;
   labelKey: string;
+  advanceLabelKey?: string;
   keys?: string[];
   backgroundValue?: number;
 };
@@ -1240,13 +1337,6 @@ const shortcutDisplaySections: Array<{ key: string; items: ShortcutDisplayItem[]
       { actionId: 'view.zoomOut', labelKey: 'zoom_out' },
       { actionId: 'view.zoomFit', labelKey: 'zoom_fit' },
       { actionId: 'view.cycleBackground', labelKey: 'cycle_background' },
-      { actionId: 'view.backgroundTheme', labelKey: 'cycle_background', backgroundValue: 0 },
-      { actionId: 'view.backgroundBlack', labelKey: 'cycle_background', backgroundValue: 1 },
-      { actionId: 'view.backgroundDarkGray', labelKey: 'cycle_background', backgroundValue: 2 },
-      { actionId: 'view.backgroundMediumGray', labelKey: 'cycle_background', backgroundValue: 3 },
-      { actionId: 'view.backgroundLightGray', labelKey: 'cycle_background', backgroundValue: 4 },
-      { actionId: 'view.backgroundWhite', labelKey: 'cycle_background', backgroundValue: 5 },
-      { actionId: 'slideshow.toggle', labelKey: 'toggle_slideshow' },
     ],
   },
   {
@@ -1273,11 +1363,11 @@ const shortcutDisplaySections: Array<{ key: string; items: ShortcutDisplayItem[]
   {
     key: 'metadata',
     items: [
-      { actionId: 'meta.favorite', labelKey: 'toggle_favorite' },
-      { actionId: 'meta.rating.clear', labelKey: 'set_clear_rating', keys: ['0 ~ 5'] },
-      { actionId: 'meta.culling.pick', labelKey: 'mark_pick' },
-      { actionId: 'meta.culling.reject', labelKey: 'mark_rejected' },
-      { actionId: 'meta.culling.unreviewed', labelKey: 'mark_unreviewed' },
+      { actionId: 'meta.favorite', labelKey: 'toggle_favorite', advanceLabelKey: 'toggle_favorite_and_next' },
+      { actionId: 'meta.rating.clear', labelKey: 'set_clear_rating', advanceLabelKey: 'set_clear_rating_and_next', keys: ['0 ~ 5'] },
+      { actionId: 'meta.culling.pick', labelKey: 'mark_pick', advanceLabelKey: 'mark_pick_and_next' },
+      { actionId: 'meta.culling.reject', labelKey: 'mark_rejected', advanceLabelKey: 'mark_rejected_and_next' },
+      { actionId: 'meta.culling.unreviewed', labelKey: 'mark_unreviewed', advanceLabelKey: 'mark_unreviewed_and_next' },
       { actionId: 'meta.tag', labelKey: 'edit_tags' },
       { actionId: 'meta.collection', labelKey: 'edit_collections' },
       { actionId: 'meta.comment', labelKey: 'edit_comment' },
@@ -1294,14 +1384,21 @@ const shortcutSections = computed(() => {
     key: section.key,
     title: shortcutMessages.sections[section.key],
     items: section.items
-      .map((item) => ({
-        actionId: item.actionId,
-        label: item.backgroundValue === undefined
+      .map((item) => {
+        const keys = item.keys ?? getDisplayShortcutKeys(item.actionId);
+        const label = item.backgroundValue === undefined
           ? shortcutMessages.actions[getShortcutActionLabelKey(item)]
-          : `${localeMsg.value.settings.image_view.view_background}: ${localeMsg.value.settings.image_view.view_background_options[item.backgroundValue]}`,
-        keys: item.keys ?? getDisplayShortcutKeys(item.actionId),
-      }))
-      .filter((item) => item.keys.length > 0),
+          : `${localeMsg.value.settings.image_view.view_background}: ${localeMsg.value.settings.image_view.view_background_options[item.backgroundValue]}`;
+        const rows = [{ label, keys }];
+        if (item.advanceLabelKey) {
+          rows.push({
+            label: shortcutMessages.actions[item.advanceLabelKey],
+            keys: [shortcutPlatform === 'mac' ? '⇧' : 'Shift', ...keys],
+          });
+        }
+        return { actionId: item.actionId, rows };
+      })
+      .filter((item) => item.rows[0].keys.length > 0),
   }));
 });
 
@@ -1439,9 +1536,11 @@ const onEmbeddingProviderChange = async (event: Event) => {
     } catch (error) {
       toast.error(error?.message || String(error));
     }
+    void syncEmbeddingCoverage();
     return;
   }
   await applyEmbeddingProvider();
+  void syncEmbeddingCoverage();
   await onTestOmlxConnection();
 };
 
@@ -1603,6 +1702,14 @@ onMounted(async () => {
   applyWindowScale(Number(config.settings.scale || 1));
   dbStorageDir.value = (await getDbStorageDir()) || '';
   hasCustomDbStorage.value = await isUsingCustomDbStorage();
+  try {
+    const cacheLocation = await getThumbnailCacheLocation() as any;
+    thumbnailCacheDir.value = cacheLocation.path;
+    hasCustomThumbnailCache.value = cacheLocation.custom;
+    thumbnailCacheAvailable.value = cacheLocation.available !== false;
+  } catch (error) {
+    toast.error(String(error));
+  }
 
   
   // Show window after mount
@@ -1613,6 +1720,10 @@ onMounted(async () => {
   // closed transparent window can fail silently on Windows.
   unlistenCloseRequested = await appWindow.onCloseRequested(async (event) => {
     event.preventDefault();
+    if (isChangingThumbnailCache.value) {
+      toast.error(t('settings.advanced.thumbnail_cache.busy'));
+      return;
+    }
     await appWindow.destroy();
   });
 });
@@ -1658,10 +1769,11 @@ watch(() => config.settings.scale, (newValue) => {
   updateSettingsWindowSize(Number(newValue || 1));
   emit('settings-scale-changed', newValue);
 });
-watch(() => config.settings.language, (newValue) => {
-  locale.value = newValue;
-  emit('settings-language-changed', newValue);
-}, { immediate: true });
+function changeLanguage(language: string) {
+  // Notify main immediately; waiting for the locale bundle would lose startup races.
+  void emit('settings-language-changed', language);
+  void config.setLanguage(language, { fromUser: true });
+}
 watch(() => config.settings.showToolTip, (newValue) => {
   emit('settings-showToolTip-changed', newValue);
 });
@@ -1796,6 +1908,8 @@ function handleKeyDown(event: KeyboardEvent) {
       break;
     }
     case 'Escape':
+      if (showThumbnailMigrationDialog.value) { void cancelThumbnailMigration(); return; }
+      if (isChangingThumbnailCache.value) return;
       // Close the topmost dialog first
       if (showBackupDialog.value) { showBackupDialog.value = false; return; }
       if (showRestoreDialog.value) { showRestoreDialog.value = false; return; }
@@ -1803,6 +1917,120 @@ function handleKeyDown(event: KeyboardEvent) {
       if (showResetDbStorageDialog.value) { showResetDbStorageDialog.value = false; return; }
       appWindow.close(); // Close the window
       break;
+  }
+}
+
+async function chooseThumbnailCacheDir() {
+  try {
+    const result = await openDialog({
+      title: t('settings.advanced.thumbnail_cache.current_location'),
+      multiple: false,
+      directory: true,
+    });
+    if (typeof result === 'string') prepareThumbnailMigration(result);
+  } catch (error) {
+    toast.error(String(error));
+  }
+}
+
+async function prepareThumbnailMigration(newDir: string | null) {
+  const request = ++thumbnailMigrationPreviewRequest;
+  pendingThumbnailCacheDir.value = newDir;
+  thumbnailCacheProgress.value = { phase: 'counting', completed: 0, total: 0 };
+  thumbnailMigrationError.value = '';
+  thumbnailMigrationCancelling.value = false;
+  thumbnailMigrationCancelled.value = false;
+  thumbnailMigrationPreview.value = 'counting';
+  showThumbnailMigrationDialog.value = true;
+  try {
+    const total = await getThumbnailCacheMigrationCount();
+    if (request !== thumbnailMigrationPreviewRequest || !showThumbnailMigrationDialog.value) return;
+    thumbnailCacheProgress.value = { phase: 'counting', completed: 0, total };
+    thumbnailMigrationPreview.value = 'ready';
+  } catch (error: any) {
+    if (request !== thumbnailMigrationPreviewRequest || !showThumbnailMigrationDialog.value) return;
+    thumbnailMigrationPreview.value = error?.code === 'SOURCE_UNAVAILABLE' ? 'unavailable' : 'error';
+    if (thumbnailMigrationPreview.value === 'error') thumbnailMigrationError.value = error?.message || String(error);
+  }
+}
+
+async function cancelThumbnailMigration() {
+  if (!isChangingThumbnailCache.value) {
+    showThumbnailMigrationDialog.value = false;
+    return;
+  }
+  if (thumbnailMigrationCancelling.value) return;
+  thumbnailMigrationCancelling.value = true;
+  const operationId = thumbnailMigrationOperationId;
+  try {
+    // A click can arrive before the start command is registered in the backend.
+    // Retry only this operation; a late cancellation must never affect a retry.
+    while (isChangingThumbnailCache.value && thumbnailMigrationOperationId === operationId) {
+      if (await cancelThumbnailCacheMigration(operationId)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  } catch (error: any) {
+    if (thumbnailMigrationOperationId === operationId) {
+      thumbnailMigrationCancelling.value = false;
+      thumbnailMigrationError.value = error?.message || String(error);
+    }
+  }
+}
+
+async function moveThumbnailCache(newDir: string | null) {
+  if (isChangingThumbnailCache.value || isChangingDbStorage.value || thumbnailMigrationPreview.value === 'counting' || thumbnailMigrationPreview.value === 'error') return;
+  isChangingThumbnailCache.value = true;
+  thumbnailMigrationOperationId = crypto.randomUUID();
+  thumbnailMigrationCancelling.value = false;
+  thumbnailMigrationCancelled.value = false;
+  thumbnailMigrationError.value = '';
+  thumbnailCacheProgress.value = { phase: 'counting', completed: 0, total: thumbnailCacheProgress.value.total };
+  try {
+    const onProgress = (progress: any) => {
+      // Keep the preview total visible while the backend verifies the current files.
+      thumbnailCacheProgress.value = progress.phase === 'counting'
+        ? { ...progress, total: thumbnailCacheProgress.value.total }
+        : progress;
+      if (progress.phase !== 'counting') thumbnailMigrationPreview.value = 'ready';
+    };
+    const move = (allowMissingSource = false) =>
+      changeThumbnailCacheLocation(newDir, onProgress, allowMissingSource, thumbnailMigrationOperationId);
+    let result: any;
+    try {
+      result = await move();
+    } catch (error: any) {
+      if (error?.code !== 'SOURCE_UNAVAILABLE') throw error;
+      if (thumbnailMigrationCancelling.value) { showThumbnailMigrationDialog.value = false; return; }
+      thumbnailCacheAvailable.value = false;
+      const confirmed = await ask(t('settings.advanced.thumbnail_cache.rebuild_message'), {
+        title: t('settings.advanced.thumbnail_cache.current_location'),
+        kind: 'warning',
+        okLabel: t('settings.advanced.thumbnail_cache.rebuild_confirm'),
+        cancelLabel: t('msgbox.cancel'),
+      });
+      if (!confirmed || thumbnailMigrationCancelling.value) return;
+      result = await move(true);
+    }
+    thumbnailCacheDir.value = result.path;
+    thumbnailCacheAvailable.value = true;
+    hasCustomThumbnailCache.value = result.custom;
+    showThumbnailMigrationDialog.value = false;
+    if (result.cleanupWarnings?.length) {
+      toast.warning(`${t('settings.advanced.thumbnail_cache.cleanup_warning')}\n${result.cleanupWarnings.join('\n')}`, { duration: 10000 });
+    } else {
+      toast.success(t('settings.advanced.thumbnail_cache.success'));
+    }
+  } catch (error: any) {
+    if (error?.code === 'CANCELLED') {
+      thumbnailMigrationCancelled.value = true;
+      thumbnailCacheProgress.value = { ...thumbnailCacheProgress.value, completed: 0 };
+    } else {
+      thumbnailMigrationError.value = error?.message || String(error);
+    }
+  } finally {
+    isChangingThumbnailCache.value = false;
+    thumbnailMigrationCancelling.value = false;
+    thumbnailMigrationOperationId = '';
   }
 }
 

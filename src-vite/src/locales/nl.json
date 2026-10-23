@@ -54,6 +54,12 @@
     "database_corrupted_hint": "Probeer over te schakelen naar een andere bibliotheek."
   },
   "album": {
+    "drop": {
+      "add": "Sleep een map om deze toe te voegen",
+      "separate": "Sleep bestanden en mappen afzonderlijk.",
+      "confirm_folder": "Map selecteren: {name}",
+      "folders_only": "Sleep een map hierheen."
+    },
     "album_list": "Albums",
     "search_folders": "Mappen zoeken",
     "favorite_folders_only": "Alleen favoriete mappen",
@@ -150,6 +156,7 @@
       "validation_name": "Voer een naam in voor het slimme album.",
       "validation_rule": "Voeg minstens één volledige regel toe.",
       "fields": {
+        "folder_name": "Mapnaam",
         "name": "Bestandsnaam",
         "file_type": "Bestandstype",
         "media_subtype": "Mediasubtype",
@@ -225,8 +232,10 @@
     }
   },
   "offline": {
+    "cloud_only": "Alleen online beschikbaar",
+    "cloud_only_pending": "Alleen online beschikbaar — bestandsinformatie onvolledig",
     "original_unavailable": "Het oorspronkelijke bestand is niet beschikbaar",
-    "requires_original": "Vereist het oorspronkelijke bestand. Sluit het opslagapparaat opnieuw aan."
+    "requires_original": "Hiervoor is het oorspronkelijke bestand nodig. Sluit het opslagapparaat opnieuw aan om deze actie te gebruiken."
   },
   "import_files": {
     "title": "Bestanden importeren",
@@ -461,7 +470,8 @@
         "Grootte",
         "Afmetingen",
         "Duur",
-        "Willekeurig"
+        "Willekeurig",
+        "Toegevoegd"
       ],
       "similarity": "Overeenkomst",
       "sort_order_options": [
@@ -561,6 +571,7 @@
       },
       "reclaimable_size": "Vrij te maken",
       "groups_title": "Duplicaatsets",
+      "skipped_cloud_only": "{count} bestanden die alleen online beschikbaar zijn overgeslagen",
       "actions_title": "Acties",
       "compare": "Vergelijken",
       "rescan": "Opnieuw scannen",
@@ -722,6 +733,7 @@
       "reveal_in_finder": "Toon in Finder...",
       "reveal_in_file_explorer": "Toon in Verkenner...",
       "refresh_file_info": "Bestandsinfo vernieuwen",
+      "index_cloud_files": "Downloaden, indexeren en ruimte vrijmaken",
       "set_album_cover": "Instellen als albumomslag",
       "set_as": "Instellen als",
       "set_desktop_wallpaper": "Instellen als bureaubladachtergrond",
@@ -1001,7 +1013,10 @@
       "cancelled": "Geannuleerd",
       "complete": "Voltooid",
       "succeeded": "Bijgewerkt: {count}",
-      "failed": "Mislukt: {count}"
+      "failed": "Mislukt: {count}",
+      "release_requested": "Vrijmaken aangevraagd: {count}",
+      "kept_local": "Op dit apparaat behouden: {count}",
+      "kept_local_hint": "Bestanden die altijd op dit apparaat moeten blijven, of waarvoor Windows Lap geen ruimte liet vrijmaken (gecontroleerde maptoegang)."
     },
     "image_editor": {
       "title": "Bewerken",
@@ -1110,7 +1125,7 @@
       "shadow": "Schaduwen tekenen",
       "style": "Stijl",
       "export": "Exporteren: {size}",
-      "random_rotation": "Willekeurige rotatie",
+      "random_rotation": "Willekeurig draaien",
       "border_width": "Randdikte",
       "page": "Pagina",
       "page_size": "Formaat",
@@ -1311,8 +1326,8 @@
       "select_language": "Kies taal",
       "date_time_format": "Datum- en tijdnotatie",
       "date_time_format_options": [
-        "Volg systeem",
-        "Volg app-taal"
+        "Systeem volgen",
+        "App-taal volgen"
       ],
       "font_size": "Lettergrootte",
       "font_size_options": [
@@ -1328,9 +1343,9 @@
     },
     "raw": {
       "title": "RAW",
-      "section_pairs": "Gepaarde bestanden",
+      "section_pairs": "Gekoppelde bestanden",
       "pair_source": "Standaardweergave voor paren",
-      "pair_source_hint": "Gebruikt voor gepaarde miniaturen en voorbeelden",
+      "pair_source_hint": "Gebruikt voor miniaturen en voorbeelden van gekoppelde bestanden",
       "pair_jpeg": "JPEG / HEIC",
       "rawPreviewSource": "Standaardvoorbeeldbron",
       "preview_source_hint": "Als de voorkeursbron ontbreekt, wordt de andere gebruikt",
@@ -1338,13 +1353,13 @@
       "option_embedded": "Ingesloten voorbeeld eerst",
       "option_rendered": "RAW eerst renderen",
       "option_original": "Originele belichting",
-      "option_brightened": "Ophelderd",
+      "option_brightened": "Helderder",
       "brightness_hint": "Geldt alleen voor RAW-rendering",
       "switch_to": "Overschakelen naar {source}",
       "show_pair": "Gekoppelde {format} tonen",
       "source_embedded": "Ingesloten",
       "source_rendered": "Gerenderd",
-      "source_brightened": "Ophelderd",
+      "source_brightened": "Helderder",
       "preview_mode": "RAW-voorbeeldmodus"
     },
     "browse": {
@@ -1577,7 +1592,6 @@
         "zoom_out": "Uitzoomen",
         "zoom_fit": "Wisselen tussen ware grootte / passend in venster",
         "cycle_background": "Achtergrond wisselen",
-        "toggle_slideshow": "Diavoorstelling afspelen / pauzeren",
         "open_new_window": "Bekijken in nieuw venster",
         "open_external_app": "Openen in externe app",
         "edit_image": "Bewerken",
@@ -1596,20 +1610,25 @@
         "delete_permanently": "Definitief verwijderen",
         "refresh_file_info": "Bestandsinfo vernieuwen",
         "print": "Afdrukken",
-        "toggle_favorite": "Favoriet aan/uit",
-        "set_clear_rating": "Beoordeling instellen / wissen",
-        "mark_pick": "Markeren als gekozen",
-        "mark_rejected": "Markeren als afgewezen",
-        "mark_unreviewed": "Markeren als niet bekeken",
+        "toggle_favorite": "Toevoegen aan / Verwijderen uit favorieten",
+        "toggle_favorite_and_next": "Toevoegen aan / Verwijderen uit favorieten → Volgende",
+        "set_clear_rating": "Beoordeling",
+        "set_clear_rating_and_next": "Beoordeling → Volgende",
+        "mark_pick": "Schiften · Gekozen",
+        "mark_pick_and_next": "Schiften · Gekozen → Volgende",
+        "mark_rejected": "Schiften · Afgewezen",
+        "mark_rejected_and_next": "Schiften · Afgewezen → Volgende",
+        "mark_unreviewed": "Schiften · Niet bekeken",
+        "mark_unreviewed_and_next": "Schiften · Niet bekeken → Volgende",
         "clear_rating": "Beoordeling wissen",
         "rate_one": "1 ster geven",
         "rate_two": "2 sterren geven",
         "rate_three": "3 sterren geven",
         "rate_four": "4 sterren geven",
         "rate_five": "5 sterren geven",
-        "edit_tags": "Tags bewerken",
-        "edit_collections": "Collecties bewerken",
-        "edit_comment": "Opmerking bewerken",
+        "edit_tags": "Tags",
+        "edit_collections": "Collecties",
+        "edit_comment": "Opmerking",
         "rotate": "Weergave draaien (rechtsom)",
         "rotate_counterclockwise": "Weergave draaien (linksom)",
         "thumbnail_increase": "Miniaturen vergroten",
@@ -1618,37 +1637,61 @@
     },
     "advanced": {
       "title": "Geavanceerd",
-      "section_thumbnail_cache": "Miniaturencache",
-      "thumbnail_quality": "Kwaliteit miniaturen",
-      "thumbnail_quality_hint": "Bepaalt de resolutie van gegenereerde miniaturen. Hogere instellingen zijn scherper, maar genereren duurt langer en kost meer schijfruimte",
-      "section_map": "Kaart",
-      "map_provider": "Kaartaanbieder",
-      "map_provider_hint": "Kies de kaartdienst voor de kaartweergave",
-      "map_provider_options": [
-        "Wereldwijd (standaard)",
-        "China (Tianditu)"
-      ],
-      "tianditu_token": "Tianditu API-token",
-      "tianditu_token_hint": "Vereist voor Tianditu-kaarttegels",
-      "tianditu_token_placeholder": "Plak je token",
-      "tianditu_token_status_saved": "Opgeslagen",
-      "tianditu_token_status_empty": "Niet ingesteld",
-      "thumbnail_quality_options": [
-        "Laag (256 px)",
-        "Standaard (512 px)",
-        "Hoog (1024 px)"
-      ],
-      "section_external_apps": "Externe apps",
-      "manage_external_apps": "Externe apps beheren",
-      "external_image_editor": "Foto openen in",
-      "external_video_app": "Video openen in",
-      "external_app_not_selected": "Geen app gekozen",
-      "choose_app": "Kiezen",
-      "clear_app": "Wissen",
-      "default_app": "Standaard",
-      "set_default_app": "Als standaard instellen",
+      "external_app": {
+        "section_external_apps": "Externe apps",
+        "manage_external_apps": "Externe apps beheren",
+        "external_image_editor": "Foto openen in",
+        "external_video_app": "Video openen in",
+        "external_app_not_selected": "Geen app gekozen",
+        "choose_app": "Kiezen",
+        "clear_app": "Wissen",
+        "default_app": "Standaard",
+        "set_default_app": "Als standaard instellen"
+      },
       "section_diagnostics": "Diagnose",
-      "debug_mode": "Debugmodus"
+      "debug_mode": "Debugmodus",
+      "map": {
+        "section_map": "Kaart",
+        "map_provider": "Kaartaanbieder",
+        "map_provider_hint": "Kies de kaartdienst voor de kaartweergave",
+        "map_provider_options": [
+          "Wereldwijd (standaard)",
+          "China (Tianditu)"
+        ],
+        "tianditu_token": "Tianditu API-token",
+        "tianditu_token_hint": "Vereist voor Tianditu-kaarttegels",
+        "tianditu_token_placeholder": "Plak je token",
+        "tianditu_token_status_saved": "Opgeslagen",
+        "tianditu_token_status_empty": "Niet ingesteld"
+      },
+      "thumbnail_cache": {
+        "rolling_back": "Terugdraaien…",
+        "cancelled": "Geannuleerd. De oorspronkelijke cache is behouden.",
+        "new_location": "Nieuwe locatie: {path}",
+        "migrating": "Miniaturen worden verplaatst…",
+        "migration_hint": "Miniaturen van alle bibliotheken worden verplaatst. De nieuwe locatie wordt pas actief na een geslaagde migratie. Bij annuleren blijft de huidige cachelocatie behouden.",
+        "migration_progress": "Migratievoortgang",
+        "ready": "Klaar om te migreren",
+        "start": "Starten",
+        "cancelling": "Annuleren…",
+        "rebuild_message": "De vorige cachelocatie is niet beschikbaar. Doorgaan zonder de bestanden te verplaatsen? Miniaturen worden zo nodig op de nieuwe locatie opnieuw gemaakt. Bibliotheekgegevens, originele foto’s en bestanden op de vorige schijf blijven ongewijzigd.",
+        "rebuild_confirm": "Doorgaan en opnieuw maken",
+        "section_thumbnail_cache": "Miniaturencache",
+        "thumbnail_quality": "Resolutie van miniaturen wijzigen",
+        "thumbnail_quality_hint": "Hogere instellingen zijn scherper, maar genereren duurt langer en kost meer schijfruimte",
+        "thumbnail_quality_options": [
+          "Laag (256 px)",
+          "Standaard (512 px)",
+          "Hoog (1024 px)"
+        ],
+        "unavailable": "Cachelocatie niet beschikbaar. Sluit de schijf weer aan voordat u deze cache gebruikt of verplaatst.",
+        "current_location": "Cachelocatie wijzigen",
+        "counting": "Cachebestanden tellen…",
+        "finishing": "Verplaatsing afronden…",
+        "success": "Cachelocatie voor miniaturen gewijzigd",
+        "cleanup_warning": "De cache is verplaatst, maar sommige oude bestanden konden niet worden verwijderd:",
+        "busy": "Wacht tot de miniaturencache is verplaatst."
+      }
     },
     "database": {
       "title": "Opslag",
