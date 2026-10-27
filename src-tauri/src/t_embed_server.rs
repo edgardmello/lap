@@ -569,13 +569,11 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
     };
     let status = response.status();
     let body = response.text().unwrap_or_default();
-    if !status.is_success() {
-        return ServerConnectionStatus::failed(format!(
-            "Server responded with {}: {}",
-            status.as_u16(),
-            truncate(body.trim(), 300)
-        ));
-    }
+    // Not every OpenAI-compatible server lists its models; the probe below
+    // decides then.
+    let list_error = (!status.is_success()).then(|| {
+        format!("Server responded with {}: {}", status.as_u16(), truncate(body.trim(), 300))
+    });
     let models = serde_json::from_str::<serde_json::Value>(&body)
         .map(|value| parse_model_list(settings.api, &value))
         .unwrap_or_default();
@@ -589,7 +587,10 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
     let (model_available, images_supported, error) = match probe {
         Ok(_) => (true, Some(true), None),
         Err(error) if listed => (true, Some(false), Some(error)),
-        Err(_) => (false, None, None),
+        Err(error) => match list_error {
+            Some(list_error) => return ServerConnectionStatus::failed(list_error),
+            None => (false, None, Some(error)),
+        },
     };
     ServerConnectionStatus {
         ok: true,
@@ -619,12 +620,13 @@ fn parse_model_list(api: ServerApi, value: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Small solid-color PNG for the image-support probe.
+/// Thumbnail-sized JPEG for the image-support probe, so servers see the same
+/// kind of input a re-index sends.
 fn probe_image() -> Vec<u8> {
-    let image = image::RgbImage::from_pixel(32, 32, image::Rgb([96, 128, 160]));
+    let image = image::RgbImage::from_fn(224, 224, |x, y| image::Rgb([x as u8, y as u8, 128]));
     let mut bytes = std::io::Cursor::new(Vec::new());
     image
-        .write_to(&mut bytes, image::ImageFormat::Png)
+        .write_to(&mut bytes, image::ImageFormat::Jpeg)
         .map(|_| bytes.into_inner())
         .unwrap_or_default()
 }
@@ -1651,8 +1653,8 @@ mod tests {
     }
 
     #[test]
-    fn probe_image_is_a_png() {
-        assert_eq!(image_mime(&probe_image()), "image/png");
+    fn probe_image_is_a_jpeg() {
+        assert_eq!(image_mime(&probe_image()), "image/jpeg");
     }
 
     /// Re-index side effects against an in-memory "current library"; the

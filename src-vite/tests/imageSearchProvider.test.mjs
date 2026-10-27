@@ -54,3 +54,25 @@ test('moving between embedding servers keeps the strictness and each server\'s c
   config.setImageSearchProvider('unknown');
   assert.equal(config.settings.imageSearch.provider, 'builtin');
 });
+
+test('the main window takes the provider and connections chosen in Settings', async () => {
+  const config = await configStore();
+  config.setImageSearchThresholdIndex(3);
+  config.syncImageSearchProvider({
+    provider: 'ollama',
+    ollama: { url: 'http://mac:11434', model: 'embeddinggemma-2:740m' },
+  });
+  const search = config.settings.imageSearch;
+  assert.equal(search.provider, 'ollama');
+  assert.equal(search.ollama.url, 'http://mac:11434');
+  assert.equal(search.ollama.dimensionsIndex, 0, 'missing fields fall back to defaults');
+  assert.equal(search.omlx.url, 'http://127.0.0.1:8000', 'servers not in the payload are kept');
+  assert.equal(search.thresholdIndex, 3, 'strictness syncs separately');
+});
+
+test('Settings sends provider changes to the main window, which applies them', async () => {
+  const settings = await readFile(new URL('../src/views/Settings.vue', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  assert.match(settings, /emit\('settings-imageSearchProvider-changed'/);
+  assert.match(main, /listen\('settings-imageSearchProvider-changed'[\s\S]{0,80}syncImageSearchProvider/);
+});
