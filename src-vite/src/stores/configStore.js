@@ -437,6 +437,13 @@ export const useConfigStore = defineStore('configStore', {
       }
       this.settings.imageSearch.provider = next;
     },
+    // Provider and oMLX connection chosen in the Settings window. The
+    // strictness arrives in its own event, so it is not reset here.
+    syncImageSearchProvider({ provider, omlx }) {
+      if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
+      this.settings.imageSearch.provider = provider === 'omlx' ? 'omlx' : 'builtin';
+      if (omlx) this.settings.imageSearch.omlx = { ...this.settings.imageSearch.omlx, ...omlx };
+    },
     setImageSearchOmlxSettings(omlx) {
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
       this.settings.imageSearch.omlx = { ...this.settings.imageSearch.omlx, ...omlx };

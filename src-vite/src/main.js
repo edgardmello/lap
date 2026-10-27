@@ -213,6 +213,9 @@ if (isMainWindow) {
   listen('settings-imageSearchModel-changed', (event) => {
     config.setImageSearchModel(event.payload)
   })
+  listen('settings-imageSearchProvider-changed', (event) => {
+    config.syncImageSearchProvider(event.payload)
+  })
   listen('settings-similarPhotoGroupingThresholdIndex-changed', (event) => {
     config.setSimilarPhotoGroupingThresholdIndex(event.payload)
   })

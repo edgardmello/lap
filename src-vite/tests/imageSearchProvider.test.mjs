@@ -36,3 +36,21 @@ test('switching provider applies that provider\'s default strictness', async () 
   config.setImageSearchProvider('builtin');
   assert.equal(config.settings.imageSearch.thresholdIndex, 2, 'built-in CLIP returns to Standard');
 });
+
+test('the main window takes the provider and connection chosen in Settings', async () => {
+  const config = await configStore();
+  config.setImageSearchThresholdIndex(3);
+  config.syncImageSearchProvider({ provider: 'omlx', omlx: { url: 'http://mac:8000', model: 'eg2' } });
+  const search = config.settings.imageSearch;
+  assert.equal(search.provider, 'omlx');
+  assert.equal(search.omlx.url, 'http://mac:8000');
+  assert.equal(search.omlx.dimensionsIndex, 0, 'fields not sent are kept');
+  assert.equal(search.thresholdIndex, 3, 'strictness syncs separately');
+});
+
+test('Settings sends provider changes to the main window, which applies them', async () => {
+  const settings = await readFile(new URL('../src/views/Settings.vue', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  assert.match(settings, /emit\('settings-imageSearchProvider-changed'/);
+  assert.match(main, /listen\('settings-imageSearchProvider-changed'[\s\S]{0,80}syncImageSearchProvider/);
+});

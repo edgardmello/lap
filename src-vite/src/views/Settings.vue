@@ -1880,6 +1880,12 @@ watch(() => config.settings.imageSearch.model, (newValue) => {
 watch(() => config.settings.imageSearch.thresholdIndex, (newValue) => {
   emit('settings-imageSearchThresholdIndex-changed', newValue);
 });
+// The main window saves the whole config on its own changes, so it needs the
+// provider and oMLX connection too or its next save reverts them.
+watch(() => [config.settings.imageSearch.provider, config.settings.imageSearch.omlx], () => {
+  const { provider, omlx } = config.settings.imageSearch;
+  emit('settings-imageSearchProvider-changed', JSON.parse(JSON.stringify({ provider, omlx })));
+}, { deep: true });
 watch(similarPhotoGroupingThresholdIndex, (newValue) => {
   emit('settings-similarPhotoGroupingThresholdIndex-changed', newValue);
 });
