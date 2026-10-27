@@ -36,3 +36,21 @@ test('switching provider applies that provider\'s default strictness', async () 
   config.setImageSearchProvider('builtin');
   assert.equal(config.settings.imageSearch.thresholdIndex, 2, 'built-in CLIP returns to Standard');
 });
+
+test('moving between embedding servers keeps the strictness and each server\'s connection', async () => {
+  const config = await configStore();
+  config.setImageSearchProvider('ollama');
+  assert.equal(config.settings.imageSearch.thresholdIndex, 1, 'server models default to Focused');
+  config.setImageSearchThresholdIndex(0);
+  config.setImageSearchProvider('openai');
+  assert.equal(config.settings.imageSearch.thresholdIndex, 0, 'servers share the score scale');
+  assert.deepEqual([...config.imageSearchThresholds], [0.69, 0.67, 0.65, 0.62]);
+
+  config.setImageSearchServerSettings('ollama', { model: 'embeddinggemma-2:740m' });
+  assert.equal(config.settings.imageSearch.ollama.model, 'embeddinggemma-2:740m');
+  assert.equal(config.settings.imageSearch.ollama.url, 'http://127.0.0.1:11434');
+  assert.equal(config.settings.imageSearch.omlx.model, 'mlx-community/embeddinggemma-2-bf16');
+
+  config.setImageSearchProvider('unknown');
+  assert.equal(config.settings.imageSearch.provider, 'builtin');
+});

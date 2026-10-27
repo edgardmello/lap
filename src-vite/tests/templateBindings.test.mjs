@@ -40,7 +40,7 @@ test('settings controls are bound to declared state, including the Tianditu toke
   const { bindings } = compileScript(descriptor, { id: 'test', inlineTemplate: false });
   for (const name of [
     'tiandituTokenInput', 'tiandituTokenStatus', 'tiandituTokenStatusLabel', 'tiandituTokenStatusClass',
-    'isOmlxProvider', 'omlxConnectionMessage', 'embeddingCoverageText', 'reindexStatus',
+    'isServerProvider', 'serverConnection', 'serverConnectionMessage', 'embeddingCoverageText', 'reindexStatus',
   ]) {
     assert.ok(bindings[name], `${name} must be declared in Settings.vue`);
   }
@@ -50,11 +50,11 @@ test('re-index controls stay available for the built-in provider', () => {
   const file = path.join(srcDir, 'views/Settings.vue');
   const { descriptor } = parse(readFileSync(file, 'utf8'), { filename: file });
   const template = descriptor.template.content;
-  const omlxStart = template.indexOf('<template v-if="isOmlxProvider">');
-  const omlxEnd = template.indexOf('</template>', omlxStart);
-  assert.ok(omlxStart >= 0 && omlxEnd > omlxStart);
+  const serverStart = template.indexOf('<template v-if="isServerProvider">');
+  const serverEnd = template.indexOf('</template>', serverStart);
+  assert.ok(serverStart >= 0 && serverEnd > serverStart);
   const reindex = template.indexOf('onStartEmbeddingReindex');
-  assert.ok(reindex > omlxEnd, 're-index button must not be inside the oMLX-only block');
+  assert.ok(reindex > serverEnd, 're-index button must not be inside the server-only block');
 });
 
 test('every component template only references declared bindings', () => {

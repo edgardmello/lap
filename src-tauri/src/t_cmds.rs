@@ -8,7 +8,7 @@ use crate::t_config::{self, AppConfig, Library, LibraryInfo, LibraryState};
 use crate::t_face;
 use crate::t_image;
 use crate::t_montage;
-use crate::t_omlx;
+use crate::t_embed_server;
 use crate::t_apple_sidecar::{
     apple_aae_sidecar_paths, build_apple_sidecar_rename_plan,
     collect_original_rename_db_names, collect_replaced_file_ids_for_targets,
@@ -3402,27 +3402,29 @@ pub async fn cancel_multilingual_image_search_model_download(
     t_ai::cancel_multilingual_text_model_download(app_handle).await
 }
 
-// oMLX embedding provider
+// Embedding server provider (oMLX, Ollama, OpenAI-compatible)
 
-/// check whether the configured oMLX server is reachable and serves the model
+/// check whether the configured embedding server is reachable, serves the
+/// model, and the model accepts images
 #[tauri::command]
-pub async fn test_omlx_connection(
-    settings: t_omlx::OmlxEmbeddingSettings,
-) -> Result<t_omlx::OmlxConnectionStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || t_omlx::test_connection(&settings))
+pub async fn test_embed_server_connection(
+    settings: t_embed_server::EmbeddingServerSettings,
+) -> Result<t_embed_server::ServerConnectionStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || t_embed_server::test_connection(&settings))
         .await
         .map_err(|e| e.to_string())
 }
 
-/// switch the embedding provider between the built-in engine and oMLX
+/// switch the embedding provider between the built-in engine and a server
 #[tauri::command]
 pub fn set_image_search_provider(
-    settings: Option<t_omlx::OmlxEmbeddingSettings>,
+    settings: Option<t_embed_server::EmbeddingServerSettings>,
 ) -> Result<serde_json::Value, String> {
-    t_omlx::apply_settings(settings)?;
+    t_embed_server::apply_settings(settings)?;
     Ok(serde_json::json!({
-        "provider": if t_omlx::is_active() { "omlx" } else { "builtin" },
-        "model": t_omlx::active_model_id(),
+        "provider": t_embed_server::active_settings()
+            .map_or(serde_json::json!("builtin"), |settings| serde_json::json!(settings.api)),
+        "model": t_embed_server::active_model_id(),
     }))
 }
 
@@ -3430,24 +3432,24 @@ pub fn set_image_search_provider(
 #[tauri::command]
 pub fn start_embedding_reindex(
     app_handle: AppHandle,
-    state: State<t_omlx::EmbeddingReindexState>,
+    state: State<t_embed_server::EmbeddingReindexState>,
     library_id: Option<String>,
 ) -> Result<(), String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
-    t_omlx::spawn_reindex(app_handle, state, library_id)
+    t_embed_server::spawn_reindex(app_handle, state, library_id)
 }
 
 /// cancel a running embedding re-index
 #[tauri::command]
-pub fn cancel_embedding_reindex(state: State<t_omlx::EmbeddingReindexState>) {
+pub fn cancel_embedding_reindex(state: State<t_embed_server::EmbeddingReindexState>) {
     state.cancel();
 }
 
 /// progress of the current or last embedding re-index
 #[tauri::command]
 pub fn get_embedding_reindex_status(
-    state: State<t_omlx::EmbeddingReindexState>,
-) -> t_omlx::EmbeddingReindexStatus {
+    state: State<t_embed_server::EmbeddingReindexState>,
+) -> t_embed_server::EmbeddingReindexStatus {
     state.status()
 }
 
@@ -3455,14 +3457,14 @@ pub fn get_embedding_reindex_status(
 #[tauri::command]
 pub async fn get_embedding_coverage() -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let provider = t_omlx::active_settings();
-        let model = t_omlx::embed_model_id(provider.as_ref());
+        let provider = t_embed_server::active_settings();
+        let model = t_embed_server::embed_model_id(provider.as_ref());
         // Count only vectors of the size the model produces, so ones stored
         // under the wrong label show up as missing; with the server down,
         // fall back to the label alone.
         let expected_bytes = provider
             .as_ref()
-            .and_then(|settings| t_omlx::expected_dimensions(settings).ok())
+            .and_then(|settings| t_embed_server::expected_dimensions(settings).ok())
             .map(|dimensions| dimensions * 4);
         let (indexed, total) = AFile::embedding_coverage(&model, expected_bytes)?;
         Ok(serde_json::json!({ "model": model, "indexed": indexed, "total": total }))
@@ -3479,10 +3481,10 @@ pub async fn generate_embedding(
     library_id: Option<String>,
 ) -> Result<String, String> {
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
-    let provider = t_omlx::active_settings();
+    let provider = t_embed_server::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
         if let Some(settings) = provider {
-            omlx_file_embedding(&settings, file_id, &library_id)?;
+            server_file_embedding(&settings, file_id, &library_id)?;
             return Ok("Embedding generated and saved".to_string());
         }
         crate::t_startup::ensure_ai(&app_handle, None)?;
@@ -3504,7 +3506,7 @@ pub async fn search_similar_images(
     let library_id = library_id.unwrap_or(t_config::current_library_id()?);
     // One provider snapshot for the query vector, the stored vectors it is
     // compared with, and the score filter.
-    let provider = t_omlx::active_settings();
+    let provider = t_embed_server::active_settings();
     tauri::async_runtime::spawn_blocking(move || {
         let Some(settings) = provider else {
             crate::t_startup::ensure_ai(&app_handle, None)?;
@@ -3513,7 +3515,7 @@ pub async fn search_similar_images(
                     .map_err(|e| format!("Error while searching similar images: {}", e))
             });
         };
-        let embedding = omlx_query_embedding(&settings, &params, &library_id)?;
+        let embedding = server_query_embedding(&settings, &params, &library_id)?;
         with_current_library(&library_id, || {
             AFile::search_similar_images_with(&params, Some(&settings), &library_id, &embedding)
                 .map_err(|e| format!("Error while searching similar images: {}", e))
@@ -3523,29 +3525,29 @@ pub async fn search_similar_images(
     .map_err(|e| e.to_string())?
 }
 
-/// Query vector for an oMLX search. The HTTP request runs without the
+/// Query vector for an embedding-server search. The HTTP request runs without the
 /// library guard so a slow server cannot hold off library switches; the
 /// guard is taken again for each database access, which fails with
 /// "Library changed" if the user switched libraries in the meantime.
-fn omlx_query_embedding(
-    settings: &t_omlx::OmlxEmbeddingSettings,
+fn server_query_embedding(
+    settings: &t_embed_server::EmbeddingServerSettings,
     params: &ImageSearchParams,
     library_id: &str,
 ) -> Result<Vec<f32>, String> {
     if !params.search_text.is_empty() {
-        return t_omlx::embed_search_text(settings, &params.search_text);
+        return t_embed_server::embed_search_text(settings, &params.search_text);
     }
     let file_id = params
         .file_id
         .filter(|&id| id > 0)
         .ok_or_else(|| "No file_id or search_text provided".to_string())?;
-    omlx_file_embedding(settings, file_id, library_id)
+    server_file_embedding(settings, file_id, library_id)
 }
 
-/// oMLX vector for `file_id`: the stored one, or a new one embedded without
+/// Server vector for `file_id`: the stored one, or a new one embedded without
 /// holding the library guard and stored only if the library is unchanged.
-fn omlx_file_embedding(
-    settings: &t_omlx::OmlxEmbeddingSettings,
+fn server_file_embedding(
+    settings: &t_embed_server::EmbeddingServerSettings,
     file_id: i64,
     library_id: &str,
 ) -> Result<Vec<f32>, String> {
@@ -3568,7 +3570,7 @@ fn omlx_file_embedding(
         Source::Stored(embedding) => return Ok(embedding),
         Source::Embed(bytes) => bytes,
     };
-    let embedding = t_omlx::embed_single_image(settings, &bytes)?;
+    let embedding = t_embed_server::embed_single_image(settings, &bytes)?;
     with_current_library(library_id, || {
         AFile::store_embeddings(&[(file_id, embedding.clone())], &model_id)
     })?;

@@ -63,9 +63,9 @@ fn initialize_models<T>(
 // Called from blocking workers. The engine mutex shares initialization with
 // early searches/indexing and prevents duplicate model loads.
 pub fn ensure_ai(app: &AppHandle, model: Option<i64>) -> Result<(), String> {
-    // The oMLX provider computes embeddings over HTTP; keep the bundled ONNX
+    // An embedding server computes embeddings over HTTP; keep the bundled ONNX
     // models unloaded while it is active.
-    if crate::t_omlx::is_active() {
+    if crate::t_embed_server::is_active() {
         return Ok(());
     }
     let state = app.state::<StartupState>();

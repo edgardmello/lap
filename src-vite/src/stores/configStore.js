@@ -7,6 +7,38 @@ let languageRequest = 0;
 let pendingUserLanguageRequest = 0;
 import { SIDEBAR, MAP_MARKER_SIZES } from '@/common/constants';
 
+// Image-search embedding servers: oMLX, Ollama, and any OpenAI-compatible
+// server (LM Studio, LocalAI, vLLM, llama.cpp, ...).
+export const EMBEDDING_SERVERS = ['omlx', 'ollama', 'openai'];
+
+export const EMBEDDING_SERVER_DEFAULTS = {
+  omlx: {
+    url: 'http://127.0.0.1:8000',
+    apiKey: '',
+    model: 'mlx-community/embeddinggemma-2-bf16',
+    dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
+    translationModel: 'Qwen2.5-VL-3B-Instruct-4bit',
+  },
+  ollama: {
+    url: 'http://127.0.0.1:11434',
+    apiKey: '',
+    model: 'embeddinggemma-2',
+    dimensionsIndex: 0,
+    translationModel: '',
+  },
+  openai: {
+    url: 'http://127.0.0.1:1234/v1',
+    apiKey: '',
+    model: '',
+    dimensionsIndex: 0,
+    translationModel: '',
+  },
+};
+
+export function isEmbeddingServer(provider) {
+  return EMBEDDING_SERVERS.includes(provider);
+}
+
 export const useConfigStore = defineStore('configStore', {
   state: () => ({
     main: {
@@ -196,13 +228,12 @@ export const useConfigStore = defineStore('configStore', {
       imageSearch: {
         model: 0,                  // 0: default English-only model, 1: multilingual model
         thresholdIndex: 2,         // image search threshold index (default is Standard)
-        provider: 'builtin',       // 'builtin' (bundled CLIP) | 'omlx' (local oMLX server)
-        omlx: {                    // oMLX embedding server connection
-          url: 'http://127.0.0.1:8000',
-          apiKey: '',
-          model: 'mlx-community/embeddinggemma-2-bf16',
-          dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
-        },
+        provider: 'builtin',       // 'builtin' (bundled CLIP) | an embedding server: 'omlx' | 'ollama' | 'openai'
+        // Connection for each embedding server, kept separately so switching
+        // servers does not lose the other's settings.
+        omlx: { ...EMBEDDING_SERVER_DEFAULTS.omlx },
+        ollama: { ...EMBEDDING_SERVER_DEFAULTS.ollama },
+        openai: { ...EMBEDDING_SERVER_DEFAULTS.openai },
       },
 
       // similar photos settings
@@ -228,18 +259,18 @@ export const useConfigStore = defineStore('configStore', {
     // Image search threshold values: [Strict, Focused, Standard, Broad].
     // Server models (e.g. EmbeddingGemma) concentrate cosine scores in a much
     // higher, narrower band than CLIP, so each provider needs its own scale.
-    imageSearchThresholds: (state) => (state.settings.imageSearch?.provider === 'omlx'
+    imageSearchThresholds: (state) => (isEmbeddingServer(state.settings.imageSearch?.provider)
       ? [0.69, 0.67, 0.65, 0.62]
       : [0.32, 0.29, 0.26, 0.255]),
 
     // Embedding dimensions for Matryoshka-capable models (null keeps full size)
-    imageSearchOmlxDimensions: () => [null, 512, 256, 128],
+    imageSearchServerDimensions: () => [null, 512, 256, 128],
 
     // Fixed threshold for image-to-image "Find related photos" search.
-    similarImageSearchThreshold: (state) => (state.settings.imageSearch?.provider === 'omlx' ? 0.75 : 0.7),
+    similarImageSearchThreshold: (state) => (isEmbeddingServer(state.settings.imageSearch?.provider) ? 0.75 : 0.7),
 
     // Fixed default threshold for Smart Tags.
-    smartTagSearchThreshold: (state) => (state.settings.imageSearch?.provider === 'omlx' ? 0.62 : 0.25),
+    smartTagSearchThreshold: (state) => (isEmbeddingServer(state.settings.imageSearch?.provider) ? 0.62 : 0.25),
 
     // Similar photo grouping thresholds
     // [Very strict, Strict, Moderate, Relaxed]
@@ -429,17 +460,20 @@ export const useConfigStore = defineStore('configStore', {
     },
     setImageSearchProvider(provider) {
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
-      const next = provider === 'omlx' ? 'omlx' : 'builtin';
-      // Each provider gets its own validated default strictness on switch:
-      // Focused for oMLX (no wrong results in sampled reviews), Standard for CLIP.
-      if (this.settings.imageSearch.provider !== next) {
-        this.settings.imageSearch.thresholdIndex = next === 'omlx' ? 1 : 2;
+      const next = isEmbeddingServer(provider) ? provider : 'builtin';
+      // Each provider kind gets its own validated default strictness on
+      // switch: Focused for server models (no wrong results in sampled oMLX
+      // reviews), Standard for CLIP. Moving between servers keeps the choice.
+      const previous = this.settings.imageSearch.provider;
+      if (isEmbeddingServer(previous) !== isEmbeddingServer(next)) {
+        this.settings.imageSearch.thresholdIndex = isEmbeddingServer(next) ? 1 : 2;
       }
       this.settings.imageSearch.provider = next;
     },
-    setImageSearchOmlxSettings(omlx) {
+    setImageSearchServerSettings(provider, connection) {
+      if (!isEmbeddingServer(provider)) return;
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
-      this.settings.imageSearch.omlx = { ...this.settings.imageSearch.omlx, ...omlx };
+      this.settings.imageSearch[provider] = { ...this.settings.imageSearch[provider], ...connection };
     },
     setSimilarPhotoGroupingThresholdIndex(index) {
       if (!this.settings.similarPhotos) this.settings.similarPhotos = { groupingThresholdIndex: 1 };
@@ -484,14 +518,10 @@ export const useConfigStore = defineStore('configStore', {
           // Fill in image-search provider fields added after the first release.
           const search = settings.imageSearch;
           if (search) {
-            search.provider = search.provider === 'omlx' ? 'omlx' : 'builtin';
-            search.omlx = {
-              url: 'http://127.0.0.1:8000',
-              apiKey: '',
-              model: 'mlx-community/embeddinggemma-2-bf16',
-              dimensionsIndex: 0,
-              ...search.omlx,
-            };
+            search.provider = isEmbeddingServer(search.provider) ? search.provider : 'builtin';
+            for (const server of EMBEDDING_SERVERS) {
+              search[server] = { ...EMBEDDING_SERVER_DEFAULTS[server], ...search[server] };
+            }
           }
         }
         return state;

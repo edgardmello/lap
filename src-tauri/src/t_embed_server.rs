@@ -1,9 +1,11 @@
 /**
- * Optional oMLX embedding provider for image search.
- * When configured, text and image embeddings are computed by a local oMLX
- * server (OpenAI-compatible /v1/embeddings endpoint) instead of the bundled
- * ONNX CLIP models. Everything still runs on the user's machine; the server
- * URL is expected to point at localhost or a trusted LAN host.
+ * Optional embedding server provider for image search.
+ * When configured, text and image embeddings are computed by a local
+ * embedding server instead of the bundled ONNX CLIP models. Three APIs are
+ * supported: oMLX (/v1/embeddings with structured items), Ollama
+ * (/api/embed) and generic OpenAI-compatible servers (/v1/embeddings).
+ * Everything still runs on the user's machine; the server URL is expected
+ * to point at localhost or a trusted LAN host.
  * project: Lap
  */
 use base64::Engine as _;
@@ -24,7 +26,7 @@ const EMBEDDINGGEMMA_QUERY_PROMPT: &str = "task: search result | query: ";
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(8);
 const EMBED_TIMEOUT: Duration = Duration::from_secs(120);
-/// Images embedded per request when re-indexing with the oMLX provider.
+/// Images embedded per request when re-indexing with an embedding server.
 /// Measured on an M1 Pro, one image per request already keeps the GPU at
 /// ~98%, so larger batches barely add throughput (8 x 4 was ~2% faster
 /// than 2 x 2) while holding ~5 GB of activations and making a text search
@@ -38,15 +40,15 @@ const REINDEX_CONCURRENCY: usize = 2;
 const MAX_CONSECUTIVE_BATCH_ERRORS: usize = 3;
 /// Page size when collecting the re-index work list.
 const REINDEX_PAGE_SIZE: i64 = 512;
-/// Files the indexer may have waiting on embeddings at once with the oMLX
-/// provider: enough to fill every worker's batch.
+/// Files the indexer may have waiting on embeddings at once with an
+/// embedding server: enough to fill every worker's batch.
 pub const INDEX_CONCURRENT_FILES: usize = REINDEX_CONCURRENCY * REINDEX_BATCH_SIZE;
 
 /// Model id stamped on embeddings produced by the built-in ONNX engine.
 /// Rows written before the embed_model column existed are treated as this.
 pub const BUILTIN_EMBED_MODEL: &str = "clip-vit-b32";
 
-/// Search-score calibration for the oMLX provider. EmbeddingGemma-style
+/// Search-score calibration for embedding servers. EmbeddingGemma-style
 /// models spread cosine scores over a high, narrow band (measured on a real
 /// library: relevant matches 0.70-0.79, related-but-wrong images 0.65-0.73,
 /// absent concepts peaking around 0.67). Searches therefore keep only
@@ -166,7 +168,7 @@ fn calibration_store() -> &'static Mutex<CalibrationStore> {
     STORE.get_or_init(|| Mutex::new(CalibrationStore::default()))
 }
 
-fn calibration_key(settings: &OmlxEmbeddingSettings, library_id: &str) -> CalibrationKey {
+fn calibration_key(settings: &EmbeddingServerSettings, library_id: &str) -> CalibrationKey {
     CalibrationKey {
         library_id: library_id.to_string(),
         model_id: settings.model_id(),
@@ -176,7 +178,7 @@ fn calibration_key(settings: &OmlxEmbeddingSettings, library_id: &str) -> Calibr
 /// Score band for searching `library_id` with `settings`. The first search
 /// of a library/model pair starts a background measurement and uses the
 /// hand-tuned defaults until it lands.
-pub fn calibration_for(settings: &OmlxEmbeddingSettings, library_id: &str) -> ScoreCalibration {
+pub fn calibration_for(settings: &EmbeddingServerSettings, library_id: &str) -> ScoreCalibration {
     let key = calibration_key(settings, library_id);
     let stored = calibration_store().lock().ok().and_then(|store| store.get(&key));
     match stored {
@@ -191,7 +193,7 @@ pub fn calibration_for(settings: &OmlxEmbeddingSettings, library_id: &str) -> Sc
 /// Measure the score band for a library/model pair in the background.
 /// Without `force`, nothing happens when a result exists or a measurement
 /// is already running.
-pub fn request_calibration(settings: OmlxEmbeddingSettings, library_id: &str, force: bool) {
+pub fn request_calibration(settings: EmbeddingServerSettings, library_id: &str, force: bool) {
     let key = calibration_key(&settings, library_id);
     let Some(generation) = calibration_store()
         .lock()
@@ -250,7 +252,7 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// Ok(None) means the library has too few photos indexed for this model.
 fn calibrate(
-    settings: &OmlxEmbeddingSettings,
+    settings: &EmbeddingServerSettings,
     library_id: &str,
 ) -> Result<Option<ScoreCalibration>, String> {
     let probes = calibration_probes(settings)?;
@@ -266,7 +268,7 @@ fn calibrate(
     Ok(measure_band(&probes, &vectors))
 }
 
-pub(crate) fn calibration_probes(settings: &OmlxEmbeddingSettings) -> Result<Vec<Vec<f32>>, String> {
+pub(crate) fn calibration_probes(settings: &EmbeddingServerSettings) -> Result<Vec<Vec<f32>>, String> {
     CALIBRATION_PROBE_QUERIES
         .iter()
         .map(|query| embed_query_text(settings, query))
@@ -295,9 +297,49 @@ pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<
     Some(ScoreCalibration { floor, margin, baseline: mean })
 }
 
+/// Wire format of the embedding server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerApi {
+    /// oMLX: POST /v1/embeddings with `items` of `{text}` / `{image}`
+    /// (data URI) objects.
+    #[default]
+    Omlx,
+    /// Ollama: POST /api/embed with `input` mixing strings and `{image}`
+    /// objects (raw base64).
+    Ollama,
+    /// Generic OpenAI-compatible server (LM Studio, LocalAI, vLLM, llama.cpp,
+    /// Jina, ...): POST /v1/embeddings with `input` mixing strings and
+    /// `{image}` objects (data URI). Images need a server and model that
+    /// accept image inputs.
+    Openai,
+}
+
+impl ServerApi {
+    /// Name used in error messages.
+    pub fn label(self) -> &'static str {
+        match self {
+            ServerApi::Omlx => "oMLX",
+            ServerApi::Ollama => "Ollama",
+            ServerApi::Openai => "embedding server",
+        }
+    }
+
+    /// Prefix of the model ids stamped on stored vectors.
+    fn id_prefix(self) -> &'static str {
+        match self {
+            ServerApi::Omlx => "omlx",
+            ServerApi::Ollama => "ollama",
+            ServerApi::Openai => "openai",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OmlxEmbeddingSettings {
+pub struct EmbeddingServerSettings {
+    #[serde(default)]
+    pub api: ServerApi,
     #[serde(default = "default_url")]
     pub url: String,
     #[serde(default)]
@@ -307,6 +349,10 @@ pub struct OmlxEmbeddingSettings {
     /// Optional Matryoshka truncation (512 / 256 / 128 for EmbeddingGemma 2).
     #[serde(default)]
     pub dimensions: Option<u32>,
+    /// Optional chat model on the same server that translates searches to
+    /// English before they are embedded; empty disables translation.
+    #[serde(default)]
+    pub translation_model: String,
 }
 
 fn default_url() -> String {
@@ -317,17 +363,26 @@ fn default_model() -> String {
     DEFAULT_MODEL.to_string()
 }
 
-impl OmlxEmbeddingSettings {
-    pub fn normalized(&self) -> Result<OmlxEmbeddingSettings, String> {
+impl EmbeddingServerSettings {
+    pub fn normalized(&self) -> Result<EmbeddingServerSettings, String> {
         let mut settings = self.clone();
         settings.url = settings.url.trim().trim_end_matches('/').to_string();
+        // Ollama's native API lives next to its OpenAI layer, so a pasted
+        // OpenAI base URL still works.
+        if settings.api == ServerApi::Ollama
+            && let Some(base) = settings.url.strip_suffix("/v1")
+        {
+            settings.url = base.to_string();
+        }
         settings.model = settings.model.trim().to_string();
         settings.api_key = settings.api_key.trim().to_string();
+        settings.translation_model = settings.translation_model.trim().to_string();
+        let label = settings.api.label();
         if !settings.url.starts_with("http://") && !settings.url.starts_with("https://") {
-            return Err("The oMLX server URL must start with http:// or https://".to_string());
+            return Err(format!("The {} URL must start with http:// or https://", label));
         }
         if settings.model.is_empty() {
-            return Err("The oMLX embedding model name is required".to_string());
+            return Err(format!("The {} embedding model name is required", label));
         }
         if let Some(dimensions) = settings.dimensions {
             if dimensions == 0 {
@@ -339,16 +394,35 @@ impl OmlxEmbeddingSettings {
 
     /// Versioned id stamped on the vectors this configuration produces.
     pub fn model_id(&self) -> String {
+        let prefix = self.api.id_prefix();
         match self.dimensions {
-            Some(dimensions) => format!("omlx:{}:{}", self.model, dimensions),
-            None => format!("omlx:{}", self.model),
+            Some(dimensions) => format!("{}:{}:{}", prefix, self.model, dimensions),
+            None => format!("{}:{}", prefix, self.model),
+        }
+    }
+
+    /// URL of an OpenAI-style endpoint (`path` like "/embeddings"); accepts
+    /// base URLs with or without the trailing /v1.
+    fn openai_url(&self, path: &str) -> String {
+        if self.url.ends_with("/v1") {
+            format!("{}{}", self.url, path)
+        } else {
+            format!("{}/v1{}", self.url, path)
+        }
+    }
+
+    fn authorized(&self, request: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
+        if self.api_key.is_empty() {
+            request
+        } else {
+            request.bearer_auth(&self.api_key)
         }
     }
 }
 
 /// Size of the vectors `settings` produces: the requested dimensions, or for
 /// full-size output the size of one probe embedding, cached per model.
-pub fn expected_dimensions(settings: &OmlxEmbeddingSettings) -> Result<usize, String> {
+pub fn expected_dimensions(settings: &EmbeddingServerSettings) -> Result<usize, String> {
     if let Some(dimensions) = settings.dimensions {
         return Ok(dimensions as usize);
     }
@@ -368,22 +442,22 @@ pub fn expected_dimensions(settings: &OmlxEmbeddingSettings) -> Result<usize, St
 /// Model id for a provider snapshot (None = built-in engine). Operations take
 /// one snapshot up front and label everything they write with it, so a
 /// settings change mid-operation cannot mislabel vectors.
-pub fn embed_model_id(settings: Option<&OmlxEmbeddingSettings>) -> String {
-    settings.map_or_else(|| BUILTIN_EMBED_MODEL.to_string(), OmlxEmbeddingSettings::model_id)
+pub fn embed_model_id(settings: Option<&EmbeddingServerSettings>) -> String {
+    settings.map_or_else(|| BUILTIN_EMBED_MODEL.to_string(), EmbeddingServerSettings::model_id)
 }
 
 // ============================================================================
 // Active provider configuration
 // ============================================================================
 
-fn active_settings_cell() -> &'static RwLock<Option<OmlxEmbeddingSettings>> {
-    static ACTIVE: OnceLock<RwLock<Option<OmlxEmbeddingSettings>>> = OnceLock::new();
+fn active_settings_cell() -> &'static RwLock<Option<EmbeddingServerSettings>> {
+    static ACTIVE: OnceLock<RwLock<Option<EmbeddingServerSettings>>> = OnceLock::new();
     ACTIVE.get_or_init(|| RwLock::new(None))
 }
 
-/// Install (or, with None, remove) the oMLX embedding provider. Re-applying
+/// Install (or, with None, remove) the embedding server provider. Re-applying
 /// the current settings is a no-op; the frontend does so before searches.
-pub fn apply_settings(settings: Option<OmlxEmbeddingSettings>) -> Result<(), String> {
+pub fn apply_settings(settings: Option<EmbeddingServerSettings>) -> Result<(), String> {
     let settings = match settings {
         Some(settings) => Some(settings.normalized()?),
         None => None,
@@ -405,8 +479,8 @@ pub fn apply_settings(settings: Option<OmlxEmbeddingSettings>) -> Result<(), Str
     Ok(())
 }
 
-/// Currently configured oMLX settings, if the provider is active.
-pub fn active_settings() -> Option<OmlxEmbeddingSettings> {
+/// Currently configured server settings, if the provider is active.
+pub fn active_settings() -> Option<EmbeddingServerSettings> {
     active_settings_cell().read().ok().and_then(|v| v.clone())
 }
 
@@ -445,194 +519,304 @@ fn truncate(text: &str, max: usize) -> String {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OmlxConnectionStatus {
+pub struct ServerConnectionStatus {
     pub ok: bool,
     pub model_available: bool,
     pub models: Vec<String>,
+    /// Whether the model embedded a probe image; None when it was not tried.
+    pub images_supported: Option<bool>,
     pub error: Option<String>,
 }
 
-/// Reach out to the server and report which models it currently serves.
-pub fn test_connection(settings: &OmlxEmbeddingSettings) -> OmlxConnectionStatus {
-    let settings = match settings.normalized() {
-        Ok(settings) => settings,
-        Err(error) => {
-            return OmlxConnectionStatus {
-                ok: false,
-                model_available: false,
-                models: Vec::new(),
-                error: Some(error),
-            };
-        }
-    };
-
-    let request = match http_client(HEALTH_TIMEOUT) {
-        Ok(client) => client
-            .get(format!("{}/v1/models", settings.url))
-            .bearer_auth(&settings.api_key),
-        Err(error) => {
-            return OmlxConnectionStatus {
-                ok: false,
-                model_available: false,
-                models: Vec::new(),
-                error: Some(error),
-            };
-        }
-    };
-
-    match request.send() {
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            if !status.is_success() {
-                return OmlxConnectionStatus {
-                    ok: false,
-                    model_available: false,
-                    models: Vec::new(),
-                    error: Some(format!("Server responded with {}: {}", status.as_u16(), truncate(body.trim(), 300))),
-                };
-            }
-            let models = serde_json::from_str::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("data")
-                        .and_then(|data| data.as_array())
-                        .map(|entries| {
-                            entries
-                                .iter()
-                                .filter_map(|entry| {
-                                    entry.get("id").and_then(|id| id.as_str()).map(String::from)
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                })
-                .unwrap_or_default();
-            let model_available = models
-                .iter()
-                .any(|id| id == &settings.model || id.split(':').next() == Some(settings.model.as_str()));
-            OmlxConnectionStatus {
-                ok: true,
-                model_available,
-                models,
-                error: None,
-            }
-        }
-        Err(error) => OmlxConnectionStatus {
+impl ServerConnectionStatus {
+    fn failed(error: String) -> Self {
+        Self {
             ok: false,
             model_available: false,
             models: Vec::new(),
-            error: Some(format!("Cannot reach the oMLX server: {}", error)),
-        },
+            images_supported: None,
+            error: Some(error),
+        }
     }
 }
 
-/// POST /v1/embeddings with structured items and return one vector per item.
-fn request_embeddings(
-    settings: &OmlxEmbeddingSettings,
-    items: &[serde_json::Value],
-) -> Result<Vec<Vec<f32>>, String> {
-    let mut body = json!({ "model": settings.model, "items": items });
+/// Reach out to the server, report which models it currently serves, and
+/// check that the configured model accepts images: a text-only embedding
+/// model would otherwise only fail once a re-index starts.
+pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionStatus {
+    let settings = match settings.normalized() {
+        Ok(settings) => settings,
+        Err(error) => return ServerConnectionStatus::failed(error),
+    };
+    let client = match http_client(HEALTH_TIMEOUT) {
+        Ok(client) => client,
+        Err(error) => return ServerConnectionStatus::failed(error),
+    };
+    let url = match settings.api {
+        ServerApi::Ollama => format!("{}/api/tags", settings.url),
+        ServerApi::Omlx | ServerApi::Openai => settings.openai_url("/models"),
+    };
+
+    let response = match settings.authorized(client.get(url)).send() {
+        Ok(response) => response,
+        Err(error) => {
+            return ServerConnectionStatus::failed(format!(
+                "Cannot reach the {} server: {}",
+                settings.api.label(),
+                error
+            ));
+        }
+    };
+    let status = response.status();
+    let body = response.text().unwrap_or_default();
+    if !status.is_success() {
+        return ServerConnectionStatus::failed(format!(
+            "Server responded with {}: {}",
+            status.as_u16(),
+            truncate(body.trim(), 300)
+        ));
+    }
+    let models = serde_json::from_str::<serde_json::Value>(&body)
+        .map(|value| parse_model_list(settings.api, &value))
+        .unwrap_or_default();
+    let listed = models
+        .iter()
+        .any(|id| id == &settings.model || id.split(':').next() == Some(settings.model.as_str()));
+
+    // Some OpenAI-compatible servers list only chat models, so probe even
+    // when the model is not listed; a working probe proves it is served.
+    let probe = embed_single_image(&settings, &probe_image());
+    let (model_available, images_supported, error) = match probe {
+        Ok(_) => (true, Some(true), None),
+        Err(error) if listed => (true, Some(false), Some(error)),
+        Err(_) => (false, None, None),
+    };
+    ServerConnectionStatus {
+        ok: true,
+        model_available,
+        models,
+        images_supported,
+        error,
+    }
+}
+
+/// Model names from a model-list response: Ollama's `models[].name` or the
+/// OpenAI-style `data[].id`.
+fn parse_model_list(api: ServerApi, value: &serde_json::Value) -> Vec<String> {
+    let (list, field) = match api {
+        ServerApi::Ollama => ("models", "name"),
+        ServerApi::Omlx | ServerApi::Openai => ("data", "id"),
+    };
+    value
+        .get(list)
+        .and_then(|entries| entries.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get(field).and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Small solid-color PNG for the image-support probe.
+fn probe_image() -> Vec<u8> {
+    let image = image::RgbImage::from_pixel(32, 32, image::Rgb([96, 128, 160]));
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .map(|_| bytes.into_inner())
+        .unwrap_or_default()
+}
+
+/// One input to embed.
+enum EmbedInput<'a> {
+    Text(&'a str),
+    Image(&'a [u8]),
+}
+
+/// Request body for `inputs` in the server's wire format.
+fn embeddings_body(settings: &EmbeddingServerSettings, inputs: &[EmbedInput]) -> serde_json::Value {
+    let data_uri = |bytes: &[u8]| {
+        format!("data:{};base64,{}", image_mime(bytes), base64::engine::general_purpose::STANDARD.encode(bytes))
+    };
+    let mut body = match settings.api {
+        ServerApi::Omlx => {
+            let items: Vec<serde_json::Value> = inputs
+                .iter()
+                .map(|input| match input {
+                    EmbedInput::Text(text) => json!({ "text": text }),
+                    EmbedInput::Image(bytes) => json!({ "image": data_uri(bytes) }),
+                })
+                .collect();
+            json!({ "model": settings.model, "items": items })
+        }
+        ServerApi::Ollama => {
+            let input: Vec<serde_json::Value> = inputs
+                .iter()
+                .map(|input| match input {
+                    EmbedInput::Text(text) => json!(text),
+                    EmbedInput::Image(bytes) => {
+                        json!({ "image": base64::engine::general_purpose::STANDARD.encode(bytes) })
+                    }
+                })
+                .collect();
+            json!({ "model": settings.model, "input": input })
+        }
+        ServerApi::Openai => {
+            let input: Vec<serde_json::Value> = inputs
+                .iter()
+                .map(|input| match input {
+                    EmbedInput::Text(text) => json!(text),
+                    EmbedInput::Image(bytes) => json!({ "image": data_uri(bytes) }),
+                })
+                .collect();
+            json!({ "model": settings.model, "input": input, "encoding_format": "float" })
+        }
+    };
     if let Some(dimensions) = settings.dimensions {
         body["dimensions"] = json!(dimensions);
     }
+    body
+}
 
-    let client = http_client(EMBED_TIMEOUT)?;
-    let mut request = client
-        .post(format!("{}/v1/embeddings", settings.url))
-        .json(&body);
-    if !settings.api_key.is_empty() {
-        request = request.bearer_auth(&settings.api_key);
+fn parse_vector(value: &serde_json::Value, label: &str) -> Result<Vec<f32>, String> {
+    value
+        .as_array()
+        .ok_or_else(|| format!("{} embeddings entry has no embedding", label))?
+        .iter()
+        .map(|value| {
+            value
+                .as_f64()
+                .map(|number| number as f32)
+                .ok_or_else(|| format!("{} embedding contains a non-numeric value", label))
+        })
+        .collect()
+}
+
+/// Vectors in input order from a response in the server's wire format.
+fn parse_embeddings(api: ServerApi, parsed: &serde_json::Value) -> Result<Vec<Vec<f32>>, String> {
+    let label = api.label();
+    if api == ServerApi::Ollama {
+        return parsed
+            .get("embeddings")
+            .and_then(|embeddings| embeddings.as_array())
+            .ok_or_else(|| format!("{} embeddings response has no embeddings array", label))?
+            .iter()
+            .map(|vector| parse_vector(vector, label))
+            .collect();
     }
+    let data = parsed
+        .get("data")
+        .and_then(|data| data.as_array())
+        .ok_or_else(|| format!("{} embeddings response has no data array", label))?;
+    let mut vectors: Vec<(usize, Vec<f32>)> = Vec::with_capacity(data.len());
+    for (position, entry) in data.iter().enumerate() {
+        // oMLX always sends the index; other servers may rely on order.
+        let index = match entry.get("index").and_then(|index| index.as_u64()) {
+            Some(index) => index as usize,
+            None if api == ServerApi::Omlx => {
+                return Err(format!("{} embeddings entry has no index", label));
+            }
+            None => position,
+        };
+        let vector = parse_vector(entry.get("embedding").unwrap_or(&serde_json::Value::Null), label)?;
+        vectors.push((index, vector));
+    }
+    vectors.sort_by_key(|(index, _)| *index);
+    Ok(vectors.into_iter().map(|(_, vector)| vector).collect())
+}
+
+/// Embed `inputs` in one request and return one vector per input.
+fn request_embeddings(
+    settings: &EmbeddingServerSettings,
+    inputs: &[EmbedInput],
+) -> Result<Vec<Vec<f32>>, String> {
+    let label = settings.api.label();
+    let url = match settings.api {
+        ServerApi::Ollama => format!("{}/api/embed", settings.url),
+        ServerApi::Omlx | ServerApi::Openai => settings.openai_url("/embeddings"),
+    };
+    let client = http_client(EMBED_TIMEOUT)?;
+    let request = settings.authorized(client.post(url).json(&embeddings_body(settings, inputs)));
 
     let response = request
         .send()
-        .map_err(|e| format!("oMLX embeddings request failed: {}", e))?;
+        .map_err(|e| format!("{} embeddings request failed: {}", label, e))?;
     let status = response.status();
     let body = response
         .text()
-        .map_err(|e| format!("Failed to read oMLX response: {}", e))?;
+        .map_err(|e| format!("Failed to read {} response: {}", label, e))?;
     if !status.is_success() {
         return Err(format!(
-            "oMLX embeddings error ({}): {}",
+            "{} embeddings error ({}): {}",
+            label,
             status.as_u16(),
             truncate(body.trim(), 300)
         ));
     }
 
     let parsed = serde_json::from_str::<serde_json::Value>(&body)
-        .map_err(|e| format!("Failed to parse oMLX embeddings response: {}", e))?;
-    let data = parsed
-        .get("data")
-        .and_then(|data| data.as_array())
-        .ok_or_else(|| "oMLX embeddings response has no data array".to_string())?;
+        .map_err(|e| format!("Failed to parse {} embeddings response: {}", label, e))?;
+    let vectors = parse_embeddings(settings.api, &parsed)?;
+    check_vectors(settings, &vectors, inputs.len())?;
+    Ok(vectors)
+}
 
-    let mut vectors: Vec<(usize, Vec<f32>)> = Vec::with_capacity(data.len());
-    for entry in data {
-        let index = entry
-            .get("index")
-            .and_then(|index| index.as_u64())
-            .ok_or_else(|| "oMLX embeddings entry has no index".to_string())? as usize;
-        let vector = entry
-            .get("embedding")
-            .and_then(|embedding| embedding.as_array())
-            .ok_or_else(|| "oMLX embeddings entry has no embedding".to_string())?
-            .iter()
-            .map(|value| {
-                value
-                    .as_f64()
-                    .map(|number| number as f32)
-                    .ok_or_else(|| "oMLX embedding contains a non-numeric value".to_string())
-            })
-            .collect::<Result<Vec<f32>, String>>()?;
-        vectors.push((index, vector));
-    }
-    vectors.sort_by_key(|(index, _)| *index);
-
-    if vectors.len() != items.len() {
+fn check_vectors(
+    settings: &EmbeddingServerSettings,
+    vectors: &[Vec<f32>],
+    expected_count: usize,
+) -> Result<(), String> {
+    let label = settings.api.label();
+    if vectors.len() != expected_count {
         return Err(format!(
-            "oMLX returned {} embeddings for {} items",
+            "{} returned {} embeddings for {} items",
+            label,
             vectors.len(),
-            items.len()
+            expected_count
         ));
     }
     // A server that ignores `dimensions` would otherwise fill the index with
     // vectors labelled as a size they are not.
     if let Some(expected) = settings.dimensions
-        && let Some((_, vector)) = vectors.iter().find(|(_, v)| v.len() != expected as usize)
+        && let Some(vector) = vectors.iter().find(|v| v.len() != expected as usize)
     {
         return Err(format!(
-            "oMLX returned {}-dimensional embeddings, but {} were requested",
+            "{} returned {}-dimensional embeddings, but {} were requested",
+            label,
             vector.len(),
             expected
         ));
     }
-
-    Ok(vectors.into_iter().map(|(_, vector)| vector).collect())
+    // Text-only models on some servers answer an image with an empty vector.
+    if vectors.iter().any(|v| v.is_empty()) {
+        return Err(format!("{} returned an empty embedding", label));
+    }
+    Ok(())
 }
 
-fn uses_embeddinggemma_prompt(settings: &OmlxEmbeddingSettings) -> bool {
+fn uses_embeddinggemma_prompt(settings: &EmbeddingServerSettings) -> bool {
     settings.model.to_lowercase().contains("embeddinggemma")
 }
 
 /// Embed a user query. EmbeddingGemma models expect the retrieval query
 /// task prompt; other models receive the raw text.
-pub fn embed_query_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<Vec<f32>, String> {
+pub fn embed_query_text(settings: &EmbeddingServerSettings, text: &str) -> Result<Vec<f32>, String> {
     let input = if uses_embeddinggemma_prompt(settings) {
         format!("{}{}", EMBEDDINGGEMMA_QUERY_PROMPT, text)
     } else {
         text.to_string()
     };
-    let mut vectors = request_embeddings(settings, &[json!({ "text": input })])?;
+    let mut vectors = request_embeddings(settings, &[EmbedInput::Text(&input)])?;
     vectors
         .pop()
-        .ok_or_else(|| "oMLX returned no embedding for the query".to_string())
+        .ok_or_else(|| format!("{} returned no embedding for the query", settings.api.label()))
 }
 
-/// Chat model that translates search text to English before it is embedded.
-/// EmbeddingGemma scores English queries higher against photos, so "trash"
-/// clears the floor where "lixo" does not.
-const QUERY_TRANSLATION_MODEL: &str = "Qwen2.5-VL-3B-Instruct-4bit";
+/// Search translation: the configured chat model translates searches to
+/// English before they are embedded. EmbeddingGemma scores English queries
+/// higher against photos, so "trash" clears the floor where "lixo" does not.
 const QUERY_TRANSLATION_TIMEOUT: Duration = Duration::from_secs(30);
 const QUERY_TRANSLATION_PROMPT: &str = "Translate the user's photo search into short, natural English. \
 Reply with the English search terms only, no quotes or explanation. \
@@ -640,17 +824,21 @@ If it is already English, repeat it unchanged.";
 const QUERY_TRANSLATION_MAX_CHARS: usize = 200;
 const QUERY_TRANSLATION_CACHE_LIMIT: usize = 256;
 
-/// Embed a user search: translate it to English, then embed the translation.
-/// Falls back to the original text when the translation is unavailable.
-pub fn embed_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> Result<Vec<f32>, String> {
+/// Embed a user search: translate it to English when a translation model is
+/// configured, then embed the translation. Falls back to the original text
+/// when the translation is unavailable.
+pub fn embed_search_text(settings: &EmbeddingServerSettings, text: &str) -> Result<Vec<f32>, String> {
+    if settings.translation_model.is_empty() {
+        return embed_query_text(settings, text);
+    }
     let english = translate_search_text(settings, text);
     embed_query_text(settings, &english)
 }
 
-fn translate_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> String {
-    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+fn translate_search_text(settings: &EmbeddingServerSettings, text: &str) -> String {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = text.trim().to_lowercase();
+    let key = (settings.translation_model.clone(), text.trim().to_lowercase());
     if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return hit;
     }
@@ -671,13 +859,15 @@ fn translate_search_text(settings: &OmlxEmbeddingSettings, text: &str) -> String
     }
 }
 
-fn request_translation(settings: &OmlxEmbeddingSettings, text: &str) -> Option<String> {
+/// OpenAI-style chat completion; oMLX, Ollama and the OpenAI-compatible
+/// servers all serve it under /v1.
+fn request_translation(settings: &EmbeddingServerSettings, text: &str) -> Option<String> {
     if text.is_empty() || text.chars().count() > QUERY_TRANSLATION_MAX_CHARS {
         return None;
     }
     let client = http_client(QUERY_TRANSLATION_TIMEOUT).ok()?;
     let body = json!({
-        "model": QUERY_TRANSLATION_MODEL,
+        "model": settings.translation_model,
         "temperature": 0,
         "max_tokens": 24,
         "messages": [
@@ -685,12 +875,7 @@ fn request_translation(settings: &OmlxEmbeddingSettings, text: &str) -> Option<S
             { "role": "user", "content": text },
         ],
     });
-    let mut request = client
-        .post(format!("{}/v1/chat/completions", settings.url))
-        .json(&body);
-    if !settings.api_key.is_empty() {
-        request = request.bearer_auth(&settings.api_key);
-    }
+    let request = settings.authorized(client.post(settings.openai_url("/chat/completions")).json(&body));
     let response: serde_json::Value = request
         .send()
         .ok()?
@@ -721,17 +906,12 @@ fn image_mime(bytes: &[u8]) -> &'static str {
     }
 }
 
-fn image_item(bytes: &[u8]) -> serde_json::Value {
-    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-    json!({ "image": format!("data:{};base64,{}", image_mime(bytes), encoded) })
-}
-
 /// Embed a single image (thumbnail bytes or raw file contents).
-pub fn embed_single_image(settings: &OmlxEmbeddingSettings, bytes: &[u8]) -> Result<Vec<f32>, String> {
-    let mut vectors = request_embeddings(settings, &[image_item(bytes)])?;
+pub fn embed_single_image(settings: &EmbeddingServerSettings, bytes: &[u8]) -> Result<Vec<f32>, String> {
+    let mut vectors = request_embeddings(settings, &[EmbedInput::Image(bytes)])?;
     vectors
         .pop()
-        .ok_or_else(|| "oMLX returned no embedding for the image".to_string())
+        .ok_or_else(|| format!("{} returned no embedding for the image", settings.api.label()))
 }
 
 // ============================================================================
@@ -839,7 +1019,7 @@ fn run_reindex(
     cancel: &Arc<AtomicBool>,
     library_id: &str,
     status: &Arc<Mutex<EmbeddingReindexStatus>>,
-    provider: Option<OmlxEmbeddingSettings>,
+    provider: Option<EmbeddingServerSettings>,
 ) -> Result<(), String> {
     let model_id = embed_model_id(provider.as_ref());
     // Vectors of another size under this label (written by an older build)
@@ -871,13 +1051,13 @@ fn run_reindex(
     }
 
     match provider {
-        Some(settings) => run_reindex_omlx(app, cancel, library_id, status, settings, work),
+        Some(settings) => run_reindex_server(app, cancel, library_id, status, settings, work),
         None => run_reindex_builtin(app, cancel, library_id, status, work),
     }
 }
 
 /// Side effects of one re-index batch. Production goes to the library
-/// database and the oMLX server; tests substitute library switches and
+/// database and the embedding server; tests substitute library switches and
 /// settings changes that land while the embedding request is in flight.
 trait BatchIo {
     /// Run `op` only while `library_id` is the active library, holding off
@@ -893,7 +1073,7 @@ trait BatchIo {
 }
 
 struct ServerBatchIo<'a> {
-    settings: &'a OmlxEmbeddingSettings,
+    settings: &'a EmbeddingServerSettings,
 }
 
 impl BatchIo for ServerBatchIo<'_> {
@@ -910,7 +1090,7 @@ impl BatchIo for ServerBatchIo<'_> {
     }
 
     fn embed(&self, inputs: &[Vec<u8>]) -> Result<Vec<Vec<f32>>, String> {
-        let items: Vec<serde_json::Value> = inputs.iter().map(|bytes| image_item(bytes)).collect();
+        let items: Vec<EmbedInput> = inputs.iter().map(|bytes| EmbedInput::Image(bytes)).collect();
         request_embeddings(self.settings, &items)
     }
 
@@ -985,7 +1165,7 @@ fn embed_batch(
 
 /// One indexed file waiting for its embedding.
 struct IndexJob {
-    settings: OmlxEmbeddingSettings,
+    settings: EmbeddingServerSettings,
     library_id: String,
     file_id: i64,
     file_path: String,
@@ -1010,11 +1190,11 @@ fn index_queue() -> &'static IndexQueue {
     })
 }
 
-/// Embed a newly indexed file with the oMLX provider and wait for the
+/// Embed a newly indexed file with the embedding server and wait for the
 /// result. Files the indexer processes concurrently share requests, the
 /// same way a re-index does, instead of sending one image per request.
 pub fn embed_indexed_file(
-    settings: &OmlxEmbeddingSettings,
+    settings: &EmbeddingServerSettings,
     library_id: &str,
     file_id: i64,
     file_path: &str,
@@ -1090,14 +1270,14 @@ fn index_worker() {
     }
 }
 
-/// oMLX re-index: several workers pull batches from a shared queue and embed
+/// Server re-index: several workers pull batches from a shared queue and embed
 /// them concurrently; the server batches each request internally.
-fn run_reindex_omlx(
+fn run_reindex_server(
     app: &tauri::AppHandle,
     cancel: &Arc<AtomicBool>,
     library_id: &str,
     status: &Arc<Mutex<EmbeddingReindexStatus>>,
-    settings: OmlxEmbeddingSettings,
+    settings: EmbeddingServerSettings,
     work: Vec<(i64, String)>,
 ) -> Result<(), String> {
     let model_id = settings.model_id();
@@ -1244,7 +1424,7 @@ pub fn image_input_bytes(file_id: i64, file_path: &str, library_id: &str) -> Res
     Ok(bytes)
 }
 
-/// Formats the oMLX image pipeline can decode from inline data (JPEG, PNG,
+/// Formats embedding servers can decode from inline data (JPEG, PNG,
 /// WebP, GIF). HEIC, TIFF, PSD, and camera RAW must go through thumbnails.
 pub fn is_server_decodable_image(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0xFF, 0xD8, 0xFF]) // JPEG
@@ -1259,13 +1439,19 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
-    fn settings(model: &str, dimensions: Option<u32>) -> OmlxEmbeddingSettings {
-        OmlxEmbeddingSettings {
+    fn settings(model: &str, dimensions: Option<u32>) -> EmbeddingServerSettings {
+        EmbeddingServerSettings {
+            api: ServerApi::Omlx,
             url: DEFAULT_URL.into(),
             api_key: String::new(),
             model: model.into(),
             dimensions,
+            translation_model: String::new(),
         }
+    }
+
+    fn server(api: ServerApi, url: &str) -> EmbeddingServerSettings {
+        EmbeddingServerSettings { api, url: url.into(), ..settings("eg2", None) }
     }
 
     fn band(floor: f32) -> Option<ScoreCalibration> {
@@ -1375,6 +1561,98 @@ mod tests {
         assert_eq!(embed_model_id(None), BUILTIN_EMBED_MODEL);
         assert_eq!(embed_model_id(Some(&settings("eg2", None))), "omlx:eg2");
         assert_eq!(embed_model_id(Some(&settings("eg2", Some(512)))), "omlx:eg2:512");
+    }
+
+    #[test]
+    fn model_id_is_scoped_to_the_server_api() {
+        let ollama = EmbeddingServerSettings { dimensions: Some(256), ..server(ServerApi::Ollama, "http://h") };
+        assert_eq!(ollama.model_id(), "ollama:eg2:256");
+        assert_eq!(server(ServerApi::Openai, "http://h").model_id(), "openai:eg2");
+    }
+
+    #[test]
+    fn stored_settings_without_api_are_omlx() {
+        let stored: EmbeddingServerSettings =
+            serde_json::from_value(json!({ "url": "http://h", "model": "eg2" })).unwrap();
+        assert_eq!(stored.api, ServerApi::Omlx);
+        assert_eq!(stored.translation_model, "");
+    }
+
+    #[test]
+    fn urls_accept_base_with_or_without_v1() {
+        let plain = server(ServerApi::Openai, "http://h:1234/").normalized().unwrap();
+        let v1 = server(ServerApi::Openai, "http://h:1234/v1").normalized().unwrap();
+        assert_eq!(plain.openai_url("/embeddings"), "http://h:1234/v1/embeddings");
+        assert_eq!(v1.openai_url("/embeddings"), "http://h:1234/v1/embeddings");
+        let ollama = server(ServerApi::Ollama, "http://h:11434/v1/").normalized().unwrap();
+        assert_eq!(ollama.url, "http://h:11434", "Ollama's native API is outside /v1");
+    }
+
+    #[test]
+    fn request_bodies_follow_each_api() {
+        let png = [0x89, b'P', b'N', b'G', 1];
+        let inputs = [EmbedInput::Text("cat"), EmbedInput::Image(&png)];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+
+        let omlx = embeddings_body(&settings("eg2", Some(256)), &inputs);
+        assert_eq!(omlx["items"][0], json!({ "text": "cat" }));
+        assert_eq!(omlx["items"][1], json!({ "image": format!("data:image/png;base64,{}", encoded) }));
+        assert_eq!(omlx["dimensions"], json!(256));
+
+        let ollama = embeddings_body(&server(ServerApi::Ollama, "http://h"), &inputs);
+        assert_eq!(ollama["input"], json!(["cat", { "image": encoded }]), "Ollama takes raw base64");
+        assert!(ollama.get("dimensions").is_none());
+
+        let openai = embeddings_body(&server(ServerApi::Openai, "http://h"), &inputs);
+        assert_eq!(
+            openai["input"],
+            json!(["cat", { "image": format!("data:image/png;base64,{}", encoded) }])
+        );
+        assert_eq!(openai["encoding_format"], json!("float"));
+    }
+
+    #[test]
+    fn responses_parse_in_input_order() {
+        let ollama = json!({ "embeddings": [[1.0, 0.0], [0.0, 1.0]] });
+        assert_eq!(
+            parse_embeddings(ServerApi::Ollama, &ollama).unwrap(),
+            vec![vec![1.0, 0.0], vec![0.0, 1.0]]
+        );
+
+        let shuffled = json!({ "data": [
+            { "index": 1, "embedding": [0.0, 1.0] },
+            { "index": 0, "embedding": [1.0, 0.0] },
+        ] });
+        assert_eq!(
+            parse_embeddings(ServerApi::Omlx, &shuffled).unwrap(),
+            vec![vec![1.0, 0.0], vec![0.0, 1.0]]
+        );
+
+        let unindexed = json!({ "data": [{ "embedding": [1.0] }, { "embedding": [2.0] }] });
+        assert_eq!(parse_embeddings(ServerApi::Openai, &unindexed).unwrap(), vec![vec![1.0], vec![2.0]]);
+        assert!(parse_embeddings(ServerApi::Omlx, &unindexed).is_err(), "oMLX always sends the index");
+    }
+
+    #[test]
+    fn vector_checks_reject_wrong_count_size_and_empty() {
+        let fixed = settings("eg2", Some(2));
+        assert!(check_vectors(&fixed, &[vec![1.0, 0.0]], 1).is_ok());
+        assert!(check_vectors(&fixed, &[vec![1.0, 0.0]], 2).is_err());
+        assert!(check_vectors(&fixed, &[vec![1.0, 0.0, 0.0]], 1).is_err());
+        assert!(check_vectors(&settings("eg2", None), &[vec![]], 1).is_err());
+    }
+
+    #[test]
+    fn model_lists_parse_for_each_api() {
+        let ollama = json!({ "models": [{ "name": "embeddinggemma-2:latest" }] });
+        assert_eq!(parse_model_list(ServerApi::Ollama, &ollama), vec!["embeddinggemma-2:latest"]);
+        let openai = json!({ "data": [{ "id": "text-embedding-nomic" }] });
+        assert_eq!(parse_model_list(ServerApi::Openai, &openai), vec!["text-embedding-nomic"]);
+    }
+
+    #[test]
+    fn probe_image_is_a_png() {
+        assert_eq!(image_mime(&probe_image()), "image/png");
     }
 
     /// Re-index side effects against an in-memory "current library"; the
