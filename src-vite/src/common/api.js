@@ -3,6 +3,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { locale } from '@tauri-apps/plugin-os';
 import { listen } from '@tauri-apps/api/event';
 import { config, libConfig } from '@/common/config';
+import { EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
 import { separator, localeComp, formatTimestamp } from '@/common/utils';
 import { getRawDisplayOptions } from './rawDisplay';
 
@@ -1904,22 +1905,25 @@ export async function listenImageSearchModelDownloadProgress(callback) {
   return await listen('image_search_model_download_progress', callback);
 }
 
-// oMLX embedding provider
+// Embedding server provider (oMLX, Ollama, OpenAI-compatible)
 
-function buildOmlxSettings(omlx) {
-  const dimensions = (config.imageSearchOmlxDimensions ?? [null, 512, 256, 128])[omlx?.dimensionsIndex ?? 0] ?? null;
+function buildServerSettings(provider, connection) {
+  const defaults = EMBEDDING_SERVER_DEFAULTS[provider] || EMBEDDING_SERVER_DEFAULTS.omlx;
+  const dimensions = (config.imageSearchServerDimensions ?? [null, 512, 256, 128])[connection?.dimensionsIndex ?? 0] ?? null;
   return {
-    url: omlx?.url || 'http://127.0.0.1:8000',
-    apiKey: omlx?.apiKey || '',
-    model: omlx?.model || 'mlx-community/embeddinggemma-2-bf16',
+    api: isEmbeddingServer(provider) ? provider : 'omlx',
+    url: connection?.url || defaults.url,
+    apiKey: connection?.apiKey || '',
+    model: connection?.model || defaults.model,
     dimensions,
+    translationModel: connection?.translationModel || '',
   };
 }
 
-export async function setImageSearchProvider(provider, omlx) {
+export async function setImageSearchProvider(provider, connection) {
   try {
     return await invoke('set_image_search_provider', {
-      settings: provider === 'omlx' ? buildOmlxSettings(omlx) : null,
+      settings: isEmbeddingServer(provider) ? buildServerSettings(provider, connection) : null,
     });
   } catch (error) {
     console.error('setImageSearchProvider error:', error);
@@ -1927,12 +1931,12 @@ export async function setImageSearchProvider(provider, omlx) {
   }
 }
 
-export async function testOmlxConnection(omlx) {
+export async function testEmbeddingServerConnection(provider, connection) {
   try {
-    return await invoke('test_omlx_connection', { settings: buildOmlxSettings(omlx) });
+    return await invoke('test_embedding_server_connection', { settings: buildServerSettings(provider, connection) });
   } catch (error) {
-    console.error('testOmlxConnection error:', error);
-    return { ok: false, modelAvailable: false, models: [], error: String(error) };
+    console.error('testEmbeddingServerConnection error:', error);
+    return { ok: false, modelAvailable: false, models: [], imagesSupported: null, error: String(error) };
   }
 }
 
@@ -1992,8 +1996,8 @@ export async function searchSimilarImages(params) {
   try {
     const search = config.settings.imageSearch;
     if (params?.searchText) {
-      if (search?.provider === 'omlx') {
-        await setImageSearchProvider('omlx', search.omlx);
+      if (isEmbeddingServer(search?.provider)) {
+        await setImageSearchProvider(search.provider, search[search.provider]);
       } else {
         await setImageSearchModel(search?.model || 0);
       }

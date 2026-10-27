@@ -15,7 +15,7 @@ use crate::t_storage;
 use crate::t_utils;
 use crate::t_video;
 use crate::t_raw_display::RawDisplayOptions;
-use crate::t_omlx::{OmlxEmbeddingSettings, ScoreCalibration};
+use crate::t_embed_server::{EmbeddingServerSettings, ScoreCalibration};
 use base64::{Engine, engine::general_purpose};
 use chrono::{Datelike, TimeZone};
 use exif::{In, Tag, Value};
@@ -3330,7 +3330,7 @@ impl AFile {
             LEFT JOIN albums c ON b.album_id = c.id
             LEFT JOIN afiles lpv ON a.live_photo_video_id = lpv.id
             LEFT JOIN afolders lpf ON lpv.folder_id = lpf.id",
-            Self::embedding_matches_model_sql("a", &crate::t_omlx::active_model_id()),
+            Self::embedding_matches_model_sql("a", &crate::t_embed_server::active_model_id()),
             Self::album_joined_filter_predicate("a", "b", "c")
         )
     }
@@ -3342,7 +3342,7 @@ impl AFile {
         let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
         format!(
             "({alias}.embeds IS NOT NULL AND COALESCE({alias}.embed_model, {}) = {})",
-            quote(crate::t_omlx::BUILTIN_EMBED_MODEL),
+            quote(crate::t_embed_server::BUILTIN_EMBED_MODEL),
             quote(model_id),
         )
     }
@@ -6673,8 +6673,8 @@ impl AFile {
 
     /// check ai status
     pub fn check_ai_status(state: &State<t_ai::AiState>) -> String {
-        if crate::t_omlx::is_active() {
-            return "oMLX Embedding Provider Active".into();
+        if crate::t_embed_server::is_active() {
+            return "Embedding Server Provider Active".into();
         }
         match state.0.try_lock() {
             Ok(engine) if engine.is_loaded() => "AI Models Loaded".into(),
@@ -6685,8 +6685,8 @@ impl AFile {
     }
 
     /// get query embedding from search text or similar image id with the
-    /// built-in engine. oMLX query vectors are computed by the search command
-    /// outside the library guard (see t_cmds::omlx_query_embedding).
+    /// built-in engine. Embedding-server query vectors are computed by the search command
+    /// outside the library guard (see t_cmds::server_query_embedding).
     pub fn get_query_embedding(
         state: &State<t_ai::AiState>,
         params: &ImageSearchParams,
@@ -6695,7 +6695,7 @@ impl AFile {
             let mut engine = state.0.lock().unwrap();
             Ok(Some(engine.encode_text(&params.search_text)?))
         } else if let Some(file_id) = params.file_id.filter(|&id| id > 0) {
-            let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+            let model_id = crate::t_embed_server::BUILTIN_EMBED_MODEL;
             match Self::get_embedding_for_model(file_id, model_id) {
                 Ok(emb) => Ok(Some(emb)),
                 Err(_) => {
@@ -6708,14 +6708,14 @@ impl AFile {
         }
     }
 
-    /// generate embedding for a file with the built-in engine. oMLX vectors
-    /// are produced outside the library guard (t_omlx batches and
-    /// t_cmds::omlx_file_embedding).
+    /// generate embedding for a file with the built-in engine. Server vectors
+    /// are produced outside the library guard (t_embed_server batches and
+    /// t_cmds::server_file_embedding).
     pub fn generate_embedding(
         state: &State<t_ai::AiState>,
         file_id: i64,
     ) -> Result<String, String> {
-        let model_id = crate::t_omlx::BUILTIN_EMBED_MODEL;
+        let model_id = crate::t_embed_server::BUILTIN_EMBED_MODEL;
         let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
             return Ok("Embedding already exists".to_string());
         };
@@ -6784,7 +6784,7 @@ impl AFile {
         Ok("Embedding generated and saved".to_string())
     }
 
-    /// generate embedding for a file being indexed. With the oMLX provider the
+    /// generate embedding for a file being indexed. With an embedding server the
     /// request joins the files the indexer is processing concurrently in
     /// shared batches (stored under the library guard), instead of one image
     /// per request.
@@ -6792,14 +6792,14 @@ impl AFile {
         state: &State<t_ai::AiState>,
         file_id: i64,
     ) -> Result<String, String> {
-        let Some(settings) = crate::t_omlx::active_settings() else {
+        let Some(settings) = crate::t_embed_server::active_settings() else {
             return Self::generate_embedding(state, file_id);
         };
         let Some(file_path) = Self::embedding_target(file_id, &settings.model_id())? else {
             return Ok("Embedding already exists".to_string());
         };
         let library_id = t_config::current_library_id()?;
-        crate::t_omlx::embed_indexed_file(&settings, &library_id, file_id, &file_path)?;
+        crate::t_embed_server::embed_indexed_file(&settings, &library_id, file_id, &file_path)?;
         Ok("Embedding generated and saved".to_string())
     }
 
@@ -6877,7 +6877,7 @@ impl AFile {
                 "SELECT embeds FROM afiles
                  WHERE id = ?1 AND embeds IS NOT NULL
                    AND COALESCE(embed_model, ?3) = ?2",
-                params![file_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL],
+                params![file_id, model_id, crate::t_embed_server::BUILTIN_EMBED_MODEL],
                 |row| row.get(0),
             )
             .optional()
@@ -6911,7 +6911,7 @@ impl AFile {
                  WHERE file_type IN (1, 3) AND embeds IS NOT NULL
                    AND COALESCE(embed_model, ?2) = ?1
                    AND (?3 IS NULL OR length(embeds) = ?3)",
-                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, expected_bytes],
+                params![model_id, crate::t_embed_server::BUILTIN_EMBED_MODEL, expected_bytes],
                 |row| row.get(0),
             )
             .map_err(|e| e.to_string())?;
@@ -6950,7 +6950,7 @@ impl AFile {
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
-                params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit, dimensions * 4],
+                params![model_id, crate::t_embed_server::BUILTIN_EMBED_MODEL, limit, dimensions * 4],
                 |row| row.get::<_, Vec<u8>>(0),
             )
             .map_err(|e| e.to_string())?;
@@ -6999,7 +6999,7 @@ impl AFile {
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
-                params![last_id, model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, limit, expected_bytes],
+                params![last_id, model_id, crate::t_embed_server::BUILTIN_EMBED_MODEL, limit, expected_bytes],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .map_err(|e| e.to_string())?;
@@ -7029,7 +7029,7 @@ impl AFile {
         let Some(file_path) = Self::embedding_target(file_id, model_id)? else {
             return Ok(None);
         };
-        crate::t_omlx::image_input_bytes(file_id, &file_path, library_id).map(Some)
+        crate::t_embed_server::image_input_bytes(file_id, &file_path, library_id).map(Some)
     }
 
     /// search similar images for an already computed query vector. `provider`
@@ -7037,18 +7037,18 @@ impl AFile {
     /// stored vectors and the score filter match the query.
     pub fn search_similar_images_with(
         params: &ImageSearchParams,
-        provider: Option<&OmlxEmbeddingSettings>,
+        provider: Option<&EmbeddingServerSettings>,
         library_id: &str,
         embedding: &[f32],
     ) -> Result<Vec<Self>, String> {
-        let model_id = crate::t_omlx::embed_model_id(provider);
+        let model_id = crate::t_embed_server::embed_model_id(provider);
 
         // 2. Perform Vector Search
         let conn = open_conn()?;
         let sql = Self::embedding_search_sql(params.file_type);
         let scores = Self::score_stored_embeddings_on(&conn, &sql, &model_id, embedding)?;
 
-        // 3. Filter. The oMLX provider filters relative to the best match
+        // 3. Filter. Embedding servers filter relative to the best match
         // (calibrated per library and model); the built-in CLIP path keeps
         // its absolute threshold. Image-to-image searches anchor on the best
         // match excluding the source file, which would otherwise always
@@ -7064,7 +7064,7 @@ impl AFile {
             None
         };
         let calibration =
-            provider.map(|settings| crate::t_omlx::calibration_for(settings, library_id));
+            provider.map(|settings| crate::t_embed_server::calibration_for(settings, library_id));
         let mut scores =
             Self::filter_search_scores(scores, threshold, query_file_id, calibration, |top_ids| {
                 Self::get_embeddings_by_ids_on(&conn, top_ids)
@@ -7131,7 +7131,7 @@ impl AFile {
         let query_norm = query.iter().map(|value| value * value).sum::<f32>().sqrt();
         let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
         let mut rows = stmt
-            .query(params![model_id, crate::t_omlx::BUILTIN_EMBED_MODEL, query.len() * 4])
+            .query(params![model_id, crate::t_embed_server::BUILTIN_EMBED_MODEL, query.len() * 4])
             .map_err(|e| e.to_string())?;
 
         let mut scores: Vec<(i64, f32)> = Vec::new();
@@ -7219,7 +7219,7 @@ impl AFile {
         for (i, a) in vectors.iter().enumerate() {
             for b in &vectors[i + 1..] {
                 if a.len() == b.len() && !a.is_empty() {
-                    total += crate::t_omlx::cosine_similarity(a, b);
+                    total += crate::t_embed_server::cosine_similarity(a, b);
                     pairs += 1;
                 }
             }
@@ -7230,7 +7230,7 @@ impl AFile {
     /// Apply the provider-appropriate score filter to search results.
     ///
     /// Without a calibration (built-in CLIP model) this is the plain absolute
-    /// threshold. Server embedding models (oMLX provider) concentrate cosine
+    /// threshold. Server embedding models (e.g. EmbeddingGemma) concentrate cosine
     /// scores in a high, narrow band whose position depends on the library's
     /// content, so a fixed absolute threshold both admits unrelated images
     /// and cuts real matches. Instead, keep results close to the best match,
@@ -7348,7 +7348,7 @@ impl AFile {
 
     /// Window around the best match (in calibrated margins), floor shift
     /// (in margins) and whether the range cut applies, for each strictness
-    /// level, keyed by the frontend's oMLX threshold values
+    /// level, keyed by the frontend's server threshold values
     /// [0.69, 0.67, 0.65, 0.62]. Shifting the floor keeps the levels
     /// distinct when the best match sits close to the floor, where the
     /// window alone would collapse them. Strict keeps only the window.
@@ -11371,7 +11371,7 @@ mod raw_display_cache_tests {
 #[cfg(test)]
 mod embedding_search_tests {
     use super::*;
-    use crate::t_omlx::BUILTIN_EMBED_MODEL;
+    use crate::t_embed_server::BUILTIN_EMBED_MODEL;
 
     const OMLX_MODEL: &str = "omlx:embeddinggemma-2-8bit:512";
 

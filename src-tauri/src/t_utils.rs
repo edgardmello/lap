@@ -3696,10 +3696,10 @@ impl ProcessingBudget {
         Self {
             normal_thumb: Arc::new(Semaphore::new(normal_budget)),
             heavy_thumb: Arc::new(Semaphore::new(heavy_budget)),
-            // The built-in engine embeds one image at a time; the oMLX
-            // provider batches concurrent files into shared requests.
-            embedding: Arc::new(Semaphore::new(if crate::t_omlx::is_active() {
-                crate::t_omlx::INDEX_CONCURRENT_FILES
+            // The built-in engine embeds one image at a time; an embedding
+            // server batches concurrent files into shared requests.
+            embedding: Arc::new(Semaphore::new(if crate::t_embed_server::is_active() {
+                crate::t_embed_server::INDEX_CONCURRENT_FILES
             } else {
                 1
             })),

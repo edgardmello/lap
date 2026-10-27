@@ -366,10 +366,12 @@
               >
                 <option value="builtin">{{ $t('settings.image_search.provider_builtin') }}</option>
                 <option value="omlx">{{ $t('settings.image_search.provider_omlx') }}</option>
+                <option value="ollama">{{ $t('settings.image_search.provider_ollama') }}</option>
+                <option value="openai">{{ $t('settings.image_search.provider_openai') }}</option>
               </select>
             </div>
 
-            <template v-if="isOmlxProvider">
+            <template v-if="isServerProvider">
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.omlx_server_url') }}</div>
@@ -378,7 +380,7 @@
                   class="input input-bordered input-sm w-56 shrink-0"
                   type="text"
                   :placeholder="$t('settings.image_search.omlx_server_url')"
-                  v-model="config.settings.imageSearch.omlx.url"
+                  v-model="serverConnection.url"
                   @change="applyEmbeddingProvider"
                 />
               </div>
@@ -392,20 +394,20 @@
                   type="password"
                   autocomplete="off"
                   :placeholder="$t('settings.image_search.omlx_api_key')"
-                  v-model="config.settings.imageSearch.omlx.apiKey"
+                  v-model="serverConnection.apiKey"
                   @change="applyEmbeddingProvider"
                 />
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.omlx_model') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_model_hint') }}</div>
+                  <div class="text-xs text-base-content/30">{{ serverModelHint }}</div>
                 </div>
                 <input
                   class="input input-bordered input-sm w-56 shrink-0"
                   type="text"
-                  placeholder="mlx-community/embeddinggemma-2-bf16"
-                  v-model="config.settings.imageSearch.omlx.model"
+                  :placeholder="serverModelPlaceholder"
+                  v-model="serverConnection.model"
                   @change="applyEmbeddingProvider"
                 />
               </div>
@@ -416,18 +418,31 @@
                 </div>
                 <select
                   class="select select-bordered select-sm min-w-36 shrink-0"
-                  v-model="config.settings.imageSearch.omlx.dimensionsIndex"
+                  v-model="serverConnection.dimensionsIndex"
                   @change="applyEmbeddingProvider"
                 >
-                  <option v-for="(option, index) in omlxDimensionOptions" :key="index" :value="index">{{ option }}</option>
+                  <option v-for="(option, index) in serverDimensionOptions" :key="index" :value="index">{{ option }}</option>
                 </select>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.translation_model') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_model_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="text"
+                  :placeholder="$t('settings.image_search.translation_model_placeholder')"
+                  v-model="serverConnection.translationModel"
+                  @change="applyEmbeddingProvider"
+                />
               </div>
               <div class="flex items-center justify-between gap-4 px-1">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div class="text-xs text-base-content/30">{{ omlxConnectionMessage }}</div>
+                  <div class="text-xs text-base-content/30">{{ serverConnectionMessage }}</div>
                 </div>
-                <button class="btn btn-outline btn-xs h-6 min-h-0" :disabled="isTestingOmlxConnection" @click="onTestOmlxConnection">
-                  <span v-if="isTestingOmlxConnection" class="loading loading-spinner loading-xs"></span>
+                <button class="btn btn-outline btn-xs h-6 min-h-0" :disabled="isTestingServerConnection" @click="onTestServerConnection">
+                  <span v-if="isTestingServerConnection" class="loading loading-spinner loading-xs"></span>
                   {{ $t('settings.image_search.test_connection') }}
                 </button>
               </div>
@@ -471,7 +486,7 @@
             <div class="flex items-center gap-2 text-base-content/30">
               <span class="font-bold uppercase text-[10px] tracking-widest">{{ $t('settings.image_search.search_image') }}</span>
             </div>
-            <div v-if="!isOmlxProvider" class="flex items-start justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+            <div v-if="!isServerProvider" class="flex items-start justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
               <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                 <div>{{ $t('settings.image_search.search_model') }}</div>
                 <div class="text-xs text-base-content/30">
@@ -853,6 +868,7 @@ import { emit } from '@tauri-apps/api/event';
 import { ask, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 import { config, libConfig } from '@/common/config';
+import { EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
 import {
@@ -871,7 +887,7 @@ import {
   cancelMultilingualImageSearchModelDownload,
   listenImageSearchModelDownloadProgress,
   setImageSearchProvider,
-  testOmlxConnection,
+  testEmbeddingServerConnection,
   startEmbeddingReindex,
   cancelEmbeddingReindex,
   getEmbeddingReindexStatus,
@@ -957,8 +973,8 @@ const multilingualModelTotalBytes = ref(0);
 const isMultilingualModelAvailable = ref(false);
 const tiandituTokenInput = ref(String(config.settings.tiandituToken || ''));
 const tiandituTokenStatus = ref<'idle' | 'saved' | 'empty'>('idle');
-const isTestingOmlxConnection = ref(false);
-const omlxConnectionMessage = ref('');
+const isTestingServerConnection = ref(false);
+const serverConnectionMessage = ref('');
 const reindexStatus = ref<any>(null);
 const embeddingCoverage = ref<any>(null);
 const reindexRecommended = ref(false);
@@ -1476,10 +1492,35 @@ function splitMacShortcutLabel(label: string): string[] {
   return keys;
 }
 
-// oMLX embedding provider
-const isOmlxProvider = computed(() => config.settings.imageSearch?.provider === 'omlx');
+// Embedding server provider (oMLX, Ollama, OpenAI-compatible)
+const serverProvider = computed(() => {
+  const provider = config.settings.imageSearch?.provider;
+  return isEmbeddingServer(provider) ? provider : null;
+});
+const isServerProvider = computed(() => serverProvider.value !== null);
 
-const omlxDimensionOptions = computed(() => {
+// Connection settings of the selected server; each server keeps its own.
+const serverConnection = computed(() => {
+  const provider = serverProvider.value || 'omlx';
+  if (!config.settings.imageSearch[provider]) {
+    config.settings.imageSearch[provider] = { ...EMBEDDING_SERVER_DEFAULTS[provider] };
+  }
+  return config.settings.imageSearch[provider];
+});
+
+const serverModelPlaceholder = computed(() => {
+  return serverProvider.value === 'openai'
+    ? 'text-embedding-model'
+    : EMBEDDING_SERVER_DEFAULTS[serverProvider.value || 'omlx'].model;
+});
+
+const serverModelHint = computed(() => {
+  return serverProvider.value === 'omlx'
+    ? localeMsg.value.settings.image_search.omlx_model_hint
+    : localeMsg.value.settings.image_search.server_model_hint;
+});
+
+const serverDimensionOptions = computed(() => {
   return localeMsg.value.settings.image_search.omlx_dimensions_options || ['Full', '512', '256', '128'];
 });
 
@@ -1497,8 +1538,8 @@ const embeddingCoverageText = computed(() => {
 // surface that instead of silently searching a partial index.
 watch(() => [
   config.settings.imageSearch?.provider,
-  config.settings.imageSearch?.omlx?.model,
-  config.settings.imageSearch?.omlx?.dimensionsIndex,
+  serverConnection.value.model,
+  serverConnection.value.dimensionsIndex,
 ], () => {
   reindexRecommended.value = true;
 });
@@ -1517,9 +1558,9 @@ const reindexProgressText = computed(() => {
 });
 
 const applyEmbeddingProvider = async () => {
-  if (!isOmlxProvider.value) return;
+  if (!serverProvider.value) return;
   try {
-    await setImageSearchProvider('omlx', config.settings.imageSearch.omlx);
+    await setImageSearchProvider(serverProvider.value, serverConnection.value);
   } catch (error) {
     toast.error(error?.message || String(error));
   }
@@ -1527,10 +1568,10 @@ const applyEmbeddingProvider = async () => {
 
 const onEmbeddingProviderChange = async (event: Event) => {
   const select = event.target as HTMLSelectElement;
-  const provider = select.value === 'omlx' ? 'omlx' : 'builtin';
+  const provider = isEmbeddingServer(select.value) ? select.value : 'builtin';
   config.setImageSearchProvider(provider);
+  serverConnectionMessage.value = '';
   if (provider === 'builtin') {
-    omlxConnectionMessage.value = '';
     try {
       await setImageSearchProvider('builtin');
     } catch (error) {
@@ -1541,23 +1582,26 @@ const onEmbeddingProviderChange = async (event: Event) => {
   }
   await applyEmbeddingProvider();
   void syncEmbeddingCoverage();
-  await onTestOmlxConnection();
+  await onTestServerConnection();
 };
 
-const onTestOmlxConnection = async () => {
-  if (isTestingOmlxConnection.value) return;
-  isTestingOmlxConnection.value = true;
+const onTestServerConnection = async () => {
+  if (isTestingServerConnection.value || !serverProvider.value) return;
+  isTestingServerConnection.value = true;
   try {
-    const result = await testOmlxConnection(config.settings.imageSearch.omlx);
+    const messages = localeMsg.value.settings.image_search;
+    const result = await testEmbeddingServerConnection(serverProvider.value, serverConnection.value);
     if (!result?.ok) {
-      omlxConnectionMessage.value = `${localeMsg.value.settings.image_search.test_failed}: ${result?.error || ''}`;
-    } else if (result.modelAvailable) {
-      omlxConnectionMessage.value = localeMsg.value.settings.image_search.test_model_available;
+      serverConnectionMessage.value = `${messages.test_failed}: ${result?.error || ''}`;
+    } else if (!result.modelAvailable) {
+      serverConnectionMessage.value = messages.test_model_missing;
+    } else if (result.imagesSupported === false) {
+      serverConnectionMessage.value = `${messages.test_images_unsupported}: ${result.error || ''}`;
     } else {
-      omlxConnectionMessage.value = localeMsg.value.settings.image_search.test_model_missing;
+      serverConnectionMessage.value = messages.test_model_available;
     }
   } finally {
-    isTestingOmlxConnection.value = false;
+    isTestingServerConnection.value = false;
   }
 };
 

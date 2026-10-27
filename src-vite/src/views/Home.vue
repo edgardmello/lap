@@ -474,11 +474,12 @@ async function finishStartup() {
   startupFinished = true;
   uiStore.startupReady = true;
   performance.mark('startup-first-content-ready');
-  // Restore the oMLX embedding provider before background initialization, so
-  // the bundled ONNX models are not loaded when oMLX is active. A failed
-  // restore falls back to the built-in provider.
-  if (config.settings.imageSearch?.provider === 'omlx') {
-    await setImageSearchProvider('omlx', config.settings.imageSearch.omlx).catch(console.error);
+  // Restore the embedding server provider before background initialization,
+  // so the bundled ONNX models are not loaded when a server is active. A
+  // failed restore falls back to the built-in provider.
+  const provider = config.settings.imageSearch?.provider;
+  if (provider && provider !== 'builtin') {
+    await setImageSearchProvider(provider, config.settings.imageSearch[provider]).catch(console.error);
   }
   void invoke('finish_startup', { model: config.settings.imageSearch.model || 0 }).catch(console.error);
   if (config.settings.autoCheckUpdates !== false) void checkForUpdates(false);
