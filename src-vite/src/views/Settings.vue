@@ -868,7 +868,7 @@ import { emit } from '@tauri-apps/api/event';
 import { ask, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 import { config, libConfig } from '@/common/config';
-import { EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
+import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
 import {
@@ -1594,7 +1594,7 @@ const onTestServerConnection = async () => {
     if (!result?.ok) {
       serverConnectionMessage.value = `${messages.test_failed}: ${result?.error || ''}`;
     } else if (!result.modelAvailable) {
-      serverConnectionMessage.value = messages.test_model_missing;
+      serverConnectionMessage.value = result.error ? `${messages.test_model_missing}: ${result.error}` : messages.test_model_missing;
     } else if (result.imagesSupported === false) {
       serverConnectionMessage.value = `${messages.test_images_unsupported}: ${result.error || ''}`;
     } else {
@@ -1924,6 +1924,16 @@ watch(() => config.settings.imageSearch.model, (newValue) => {
 watch(() => config.settings.imageSearch.thresholdIndex, (newValue) => {
   emit('settings-imageSearchThresholdIndex-changed', newValue);
 });
+// The main window saves the whole config on its own changes, so it needs the
+// provider and server connections too or its next save reverts them.
+watch(() => {
+  const search = config.settings.imageSearch;
+  return [search.provider, ...EMBEDDING_SERVERS.map((server) => search[server])];
+}, () => {
+  const search = config.settings.imageSearch;
+  const servers = Object.fromEntries(EMBEDDING_SERVERS.map((server) => [server, search[server]]));
+  emit('settings-imageSearchProvider-changed', JSON.parse(JSON.stringify({ provider: search.provider, ...servers })));
+}, { deep: true });
 watch(similarPhotoGroupingThresholdIndex, (newValue) => {
   emit('settings-similarPhotoGroupingThresholdIndex-changed', newValue);
 });

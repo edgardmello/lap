@@ -470,6 +470,16 @@ export const useConfigStore = defineStore('configStore', {
       }
       this.settings.imageSearch.provider = next;
     },
+    // Provider and server connections chosen in the Settings window. The
+    // strictness arrives in its own event, so it is not reset here.
+    syncImageSearchProvider({ provider, ...servers }) {
+      if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
+      const search = this.settings.imageSearch;
+      search.provider = isEmbeddingServer(provider) ? provider : 'builtin';
+      for (const server of EMBEDDING_SERVERS) {
+        if (servers[server]) search[server] = { ...EMBEDDING_SERVER_DEFAULTS[server], ...servers[server] };
+      }
+    },
     setImageSearchServerSettings(provider, connection) {
       if (!isEmbeddingServer(provider)) return;
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
