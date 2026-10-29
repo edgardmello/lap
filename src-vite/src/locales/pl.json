@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Testuj połączenie",
       "test_failed": "Połączenie nie powiodło się",
+      "test_running": "Testowanie… pierwszy test może potrwać, gdy model się wczytuje",
       "test_model_available": "Połączono, model dostępny",
       "test_model_missing": "Połączono, ale ten serwer nie udostępnia modelu",
       "test_images_unsupported": "Połączono, ale model nie akceptuje obrazów",

@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Tester la connexion",
       "test_failed": "Échec de connexion",
+      "test_running": "Test en cours… le premier test peut prendre du temps pendant le chargement du modèle",
       "test_model_available": "Connecté, le modèle est disponible",
       "test_model_missing": "Connecté, mais le modèle n'est pas servi par ce serveur",
       "test_images_unsupported": "Connecté, mais le modèle n'accepte pas les images",

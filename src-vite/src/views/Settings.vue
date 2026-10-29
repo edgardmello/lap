@@ -439,7 +439,7 @@
               </div>
               <div class="flex items-center justify-between gap-4 px-1">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div class="text-xs text-base-content/30">{{ serverConnectionMessage }}</div>
+                  <div class="text-xs" :class="serverConnectionFailed ? 'text-error' : 'text-base-content/70'">{{ serverConnectionMessage }}</div>
                 </div>
                 <button class="btn btn-outline btn-xs h-6 min-h-0" :disabled="isTestingServerConnection" @click="onTestServerConnection">
                   <span v-if="isTestingServerConnection" class="loading loading-spinner loading-xs"></span>
@@ -975,6 +975,7 @@ const tiandituTokenInput = ref(String(config.settings.tiandituToken || ''));
 const tiandituTokenStatus = ref<'idle' | 'saved' | 'empty'>('idle');
 const isTestingServerConnection = ref(false);
 const serverConnectionMessage = ref('');
+const serverConnectionFailed = ref(false);
 const reindexStatus = ref<any>(null);
 const embeddingCoverage = ref<any>(null);
 const reindexRecommended = ref(false);
@@ -1590,7 +1591,10 @@ const onTestServerConnection = async () => {
   isTestingServerConnection.value = true;
   try {
     const messages = localeMsg.value.settings.image_search;
+    serverConnectionFailed.value = false;
+    serverConnectionMessage.value = messages.test_running;
     const result = await testEmbeddingServerConnection(serverProvider.value, serverConnection.value);
+    serverConnectionFailed.value = !result?.ok || !result.modelAvailable || result.imagesSupported === false;
     if (!result?.ok) {
       serverConnectionMessage.value = `${messages.test_failed}: ${result?.error || ''}`;
     } else if (!result.modelAvailable) {

@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Kapcsolat tesztelése",
       "test_failed": "Kapcsolati hiba",
+      "test_running": "Tesztelés… az első teszt eltarthat egy ideig, amíg a modell betöltődik",
       "test_model_available": "Kapcsolódva, a modell elérhető",
       "test_model_missing": "Kapcsolódva, de a kiszolgáló nem kínálja ezt a modellt",
       "test_images_unsupported": "Kapcsolódva, de a modell nem fogad el képeket",

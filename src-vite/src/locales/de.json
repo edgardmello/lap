@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Verbindung testen",
       "test_failed": "Verbindung fehlgeschlagen",
+      "test_running": "Wird getestet… der erste Test kann dauern, während das Modell lädt",
       "test_model_available": "Verbunden, Modell ist verfügbar",
       "test_model_missing": "Verbunden, aber der Server stellt dieses Modell nicht bereit",
       "test_images_unsupported": "Verbunden, aber das Modell akzeptiert keine Bilder",

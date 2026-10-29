@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Verbinding testen",
       "test_failed": "Verbinding mislukt",
+      "test_running": "Bezig met testen… de eerste test kan even duren terwijl het model laadt",
       "test_model_available": "Verbonden, model is beschikbaar",
       "test_model_missing": "Verbonden, maar de server biedt dit model niet aan",
       "test_images_unsupported": "Verbonden, maar het model accepteert geen afbeeldingen",
