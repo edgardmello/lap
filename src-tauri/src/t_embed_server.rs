@@ -24,7 +24,10 @@ pub const DEFAULT_MODEL: &str = "mlx-community/embeddinggemma-2-bf16";
 /// sentence-transformers prompt configuration.
 const EMBEDDINGGEMMA_QUERY_PROMPT: &str = "task: search result | query: ";
 
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(8);
+/// Listing models is quick, but a server that is still loading the model
+/// (the calibration started by switching providers loads it) can hold the
+/// request for 10+ s.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const EMBED_TIMEOUT: Duration = Duration::from_secs(120);
 /// Images embedded per request when re-indexing with an embedding server.
 /// Measured on an M1 Pro, one image per request already keeps the GPU at
@@ -557,26 +560,23 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
         ServerApi::Omlx | ServerApi::Openai => settings.openai_url("/models"),
     };
 
-    let response = match settings.authorized(client.get(url)).send() {
-        Ok(response) => response,
-        Err(error) => {
-            return ServerConnectionStatus::failed(format!(
-                "Cannot reach the {} server: {}",
-                settings.api.label(),
-                error
-            ));
+    // A failed listing does not end the test: not every OpenAI-compatible
+    // server lists its models, and a busy server may answer the embedding
+    // probe below (which waits longer) anyway.
+    let (models, list_error) = match settings.authorized(client.get(url)).send() {
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            let models = serde_json::from_str::<serde_json::Value>(&body)
+                .map(|value| parse_model_list(settings.api, &value))
+                .unwrap_or_default();
+            let error = (!status.is_success()).then(|| {
+                format!("Server responded with {}: {}", status.as_u16(), truncate(body.trim(), 300))
+            });
+            (models, error)
         }
+        Err(error) => (Vec::new(), Some(request_error(settings.api, &error))),
     };
-    let status = response.status();
-    let body = response.text().unwrap_or_default();
-    // Not every OpenAI-compatible server lists its models; the probe below
-    // decides then.
-    let list_error = (!status.is_success()).then(|| {
-        format!("Server responded with {}: {}", status.as_u16(), truncate(body.trim(), 300))
-    });
-    let models = serde_json::from_str::<serde_json::Value>(&body)
-        .map(|value| parse_model_list(settings.api, &value))
-        .unwrap_or_default();
     let listed = models
         .iter()
         .any(|id| id == &settings.model || id.split(':').next() == Some(settings.model.as_str()));
@@ -598,6 +598,21 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
         models,
         images_supported,
         error,
+    }
+}
+
+/// Readable message for a request that got no response.
+fn request_error(api: ServerApi, error: &reqwest::Error) -> String {
+    if error.is_timeout() {
+        format!(
+            "The {} server did not answer in time; the model may still be loading, try again in a moment ({})",
+            api.label(),
+            error
+        )
+    } else if error.is_connect() {
+        format!("Cannot reach the {} server; is it running at this URL? ({})", api.label(), error)
+    } else {
+        format!("{} request failed: {}", api.label(), error)
     }
 }
 
@@ -742,9 +757,7 @@ fn request_embeddings(
     let client = http_client(EMBED_TIMEOUT)?;
     let request = settings.authorized(client.post(url).json(&embeddings_body(settings, inputs)));
 
-    let response = request
-        .send()
-        .map_err(|e| format!("{} embeddings request failed: {}", label, e))?;
+    let response = request.send().map_err(|e| request_error(settings.api, &e))?;
     let status = response.status();
     let body = response
         .text()

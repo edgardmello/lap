@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "测试连接",
       "test_failed": "连接失败",
+      "test_running": "正在测试… 模型加载时，首次测试可能需要一些时间",
       "test_model_available": "已连接，模型可用",
       "test_model_missing": "已连接，但该服务器未提供此模型",
       "test_images_unsupported": "已连接，但该模型不支持图像",

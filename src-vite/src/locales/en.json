@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "Test connection",
       "test_failed": "Connection failed",
+      "test_running": "Testing… the first test can take a while if the model is loading",
       "test_model_available": "Connected, model is available",
       "test_model_missing": "Connected, but the model is not served by this server",
       "test_images_unsupported": "Connected, but the model does not accept images",

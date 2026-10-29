@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "接続テスト",
       "test_failed": "接続に失敗しました",
+      "test_running": "テスト中… モデルの読み込み中は最初のテストに時間がかかることがあります",
       "test_model_available": "接続済み、モデルは利用可能",
       "test_model_missing": "接続済みですが、このサーバーはモデルを提供していません",
       "test_images_unsupported": "接続しましたが、このモデルは画像を受け付けません",

@@ -1539,6 +1539,7 @@
       ],
       "test_connection": "연결 테스트",
       "test_failed": "연결 실패",
+      "test_running": "테스트 중… 모델을 불러오는 동안 첫 테스트는 시간이 걸릴 수 있습니다",
       "test_model_available": "연결됨, 모델 사용 가능",
       "test_model_missing": "연결됨, 이 서버는 해당 모델을 제공하지 않습니다",
       "test_images_unsupported": "연결되었지만 모델이 이미지를 지원하지 않습니다",
