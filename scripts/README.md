@@ -53,3 +53,34 @@ Downloads FFmpeg and FFprobe sidecar binaries for the current platform into `src
 | Linux x86_64 | `ffmpeg-x86_64-unknown-linux-gnu`, `ffprobe-x86_64-unknown-linux-gnu` |
 | Linux aarch64 | `ffmpeg-aarch64-unknown-linux-gnu`, `ffprobe-aarch64-unknown-linux-gnu` |
 | Windows x86_64 | `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffprobe-x86_64-pc-windows-msvc.exe` |
+
+## 3. pplx_embed_server.py
+
+Local embedding server for Perplexity's
+[`pplx-embed-v2-context-0.6b`](https://huggingface.co/perplexity-ai/pplx-embed-v2-context-0.6b),
+a 0.6B vision-language embedding model, for image search. The model ships only
+as Transformers custom code (no ONNX, MLX or GGUF build), so oMLX, Ollama and
+LM Studio cannot serve it; this script serves it through the small part of the
+OpenAI API that Lap's **OpenAI-compatible server** provider uses.
+
+Searches are embedded as queries (the model adds its own `[Q]` marker) and each
+photo as one whole-image vector. Vectors are 1024-dimensional and normalized;
+the model has no documented Matryoshka truncation, so keep **Dimensions** at
+**Full**.
+
+### Usage
+
+```bash
+python3 -m venv ~/.venvs/pplx-embed
+source ~/.venvs/pplx-embed/bin/activate
+pip install -r scripts/pplx_embed_requirements.txt
+python scripts/pplx_embed_server.py        # serves http://127.0.0.1:8090/v1
+```
+
+The first run downloads the weights (~2.4 GB) into the Hugging Face cache. It
+uses Apple Silicon (MPS) or CUDA when available and the CPU otherwise; see
+`--help` for `--port`, `--device`, `--dtype` and `--max-pixels`.
+
+Then in Lap, open **Settings > Image search**, choose **OpenAI-compatible
+server**, set the URL to `http://127.0.0.1:8090/v1` and the model to
+`perplexity-ai/pplx-embed-v2-context-0.6b`, test the connection, and re-index.

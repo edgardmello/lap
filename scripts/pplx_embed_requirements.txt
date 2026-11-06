@@ -1,0 +1,9 @@
+# Dependencies of scripts/pplx_embed_server.py (from the model card of
+# perplexity-ai/pplx-embed-v2-context-0.6b).
+transformers>=5.4.0
+torch
+torchvision
+numpy
+safetensors
+tqdm
+Pillow

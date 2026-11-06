@@ -24,6 +24,16 @@ pub const DEFAULT_MODEL: &str = "mlx-community/embeddinggemma-2-bf16";
 /// sentence-transformers prompt configuration.
 const EMBEDDINGGEMMA_QUERY_PROMPT: &str = "task: search result | query: ";
 
+/// Perplexity's pplx-embed-v2 models (e.g. pplx-embed-v2-context-0.6b),
+/// served by scripts/pplx_embed_server.py. The model adds its own query
+/// marker, so queries are sent as raw text, and it has no documented
+/// Matryoshka truncation: vectors are always 1024-dimensional.
+const PPLX_EMBED_DIMENSIONS: usize = 1024;
+
+fn is_pplx_embed_model(model: &str) -> bool {
+    model.to_lowercase().contains("pplx-embed")
+}
+
 /// Listing models is quick, but a server that is still loading the model
 /// (the calibration started by switching providers loads it) can hold the
 /// request for 10+ s.
@@ -391,6 +401,14 @@ impl EmbeddingServerSettings {
             if dimensions == 0 {
                 settings.dimensions = None;
             }
+        }
+        if is_pplx_embed_model(&settings.model)
+            && settings.dimensions.is_some_and(|d| d as usize != PPLX_EMBED_DIMENSIONS)
+        {
+            return Err(format!(
+                "{} only produces {}-dimensional vectors; set Dimensions to Full",
+                settings.model, PPLX_EMBED_DIMENSIONS
+            ));
         }
         Ok(settings)
     }
@@ -1561,6 +1579,18 @@ mod tests {
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![3]);
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![3 + size]);
         assert!(take_index_batch(&mut jobs).is_empty());
+    }
+
+    #[test]
+    fn pplx_embed_rejects_truncated_dimensions() {
+        let model = "perplexity-ai/pplx-embed-v2-context-0.6b";
+        let mut pplx = settings(model, Some(256));
+        pplx.api = ServerApi::Openai;
+        assert!(pplx.normalized().unwrap_err().contains("1024"));
+        assert!(settings(model, None).normalized().is_ok());
+        assert!(settings(model, Some(1024)).normalized().is_ok());
+        assert!(settings("embeddinggemma-2", Some(256)).normalized().is_ok());
+        assert!(!uses_embeddinggemma_prompt(&settings(model, None)), "pplx gets raw queries");
     }
 
     #[test]
