@@ -109,6 +109,8 @@ const CALIBRATION_PROBE_QUERIES: [&str; 6] = [
 /// measured band stable across recalibrations (the floor moves by less than
 /// ~0.005 at this size on a several-thousand-photo library).
 const CALIBRATION_SAMPLE_SIZE: i64 = 300;
+/// Lowest floor the calibration may set.
+const MIN_CALIBRATED_FLOOR: f32 = 0.10;
 /// Minimum sample the calibration accepts.
 const CALIBRATION_MIN_VECTORS: usize = 20;
 
@@ -260,8 +262,9 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// best match") from random text/image similarity over the user's library:
 /// floor = mean + 2.75·σ, margin = 1.5·σ. The band depends heavily on the
 /// library's content (measured means range from ~0.53 on a documents-heavy
-/// library to ~0.60 on a colorful photo set), so the clamps are wide safety
-/// rails rather than a window around the hand-tuned defaults.
+/// library to ~0.60 on a colorful photo set, and far lower for models with a
+/// different similarity scale), so the clamps are wide safety rails rather
+/// than a window around the hand-tuned defaults.
 ///
 /// Ok(None) means the library has too few photos indexed for this model.
 fn calibrate(
@@ -305,7 +308,11 @@ pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<
     let variance = samples.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>() / count;
     let sigma = variance.sqrt();
 
-    let floor = (mean + 2.75 * sigma).clamp(0.55, 0.80);
+    // The lower rail only guards against a degenerate sample: cross-modal
+    // models such as pplx-embed-v2 put text/image cosines far below
+    // EmbeddingGemma's band, and a fixed 0.55 rail hid all but the
+    // strongest matches there.
+    let floor = (mean + 2.75 * sigma).clamp(MIN_CALIBRATED_FLOOR, 0.80);
     let margin = (1.5 * sigma).clamp(0.02, 0.10);
     Some(ScoreCalibration { floor, margin, baseline: mean })
 }
@@ -1579,6 +1586,21 @@ mod tests {
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![3]);
         assert_eq!(ids(take_index_batch(&mut jobs)), vec![3 + size]);
         assert!(take_index_batch(&mut jobs).is_empty());
+    }
+
+    #[test]
+    fn calibration_follows_low_similarity_models() {
+        // Unit vectors whose cosine with the probe is ~0.25 +- 0.02, the
+        // kind of band a cross-modal model produces.
+        let probe = vec![1.0, 0.0];
+        let vectors: Vec<Vec<f32>> = (0..40)
+            .map(|i| {
+                let cos = 0.23 + 0.04 * (i % 5) as f32 / 4.0;
+                vec![cos, (1.0 - cos * cos).sqrt()]
+            })
+            .collect();
+        let band = measure_band(&[probe], &vectors).unwrap();
+        assert!(band.floor < 0.35 && band.floor > band.baseline, "floor {} tracks the band", band.floor);
     }
 
     #[test]
