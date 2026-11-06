@@ -44,6 +44,7 @@ import json
 import sys
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_MODEL = "perplexity-ai/pplx-embed-v2-context-0.6b"
@@ -96,7 +97,39 @@ class Embedder:
             kwargs["attn_implementation"] = "sdpa"
         self.model = AutoModel.from_pretrained(args.model, **kwargs).to(self.device).eval()
         self.torch = torch
+        self._attach_preprocessors(args)
+        self._self_test()
         print(f"Model ready in {time.time() - started:.1f} s", flush=True)
+
+    def _attach_preprocessors(self, args: argparse.Namespace) -> None:
+        """Load the tokenizer and image processor up front.
+
+        The model loads them lazily from `config._name_or_path` and
+        `config._commit_hash`; when that lookup raises AttributeError inside
+        the property, nn.Module hides it behind "object has no attribute
+        'tokenizer'". Loading them here from the repo id avoids that path
+        and reports the real error at startup.
+        """
+        from transformers import AutoProcessor, AutoTokenizer
+
+        common = {"trust_remote_code": True}
+        if args.revision:
+            common["revision"] = args.revision
+        tokenizer = AutoTokenizer.from_pretrained(args.model, padding_side="right", **common)
+        self.model.tokenizer = tokenizer
+        processor = AutoProcessor.from_pretrained(args.model, **common)
+        processor.tokenizer = tokenizer
+        self.model._image_processor = processor
+
+    def _self_test(self) -> None:
+        """Embed one query and one image so failures show at startup."""
+        from PIL import Image
+
+        text = self.embed_texts(["a photo of a dog"])[0]
+        image = self.embed_images([Image.new("RGB", (224, 224), (128, 96, 64))])[0]
+        if len(text) != len(image):
+            raise RuntimeError(f"text ({len(text)}) and image ({len(image)}) vectors differ in size")
+        print(f"Self-test ok: {len(text)}-dimensional vectors", flush=True)
 
     def served_names(self) -> set[str]:
         short = self.model_name.rstrip("/").split("/")[-1]
@@ -237,7 +270,7 @@ def make_handler(embedder: Embedder):
                 for slot, vector in zip(image_slots, embedder.embed_images([items[i][1] for i in image_slots])):
                     vectors[slot] = vector
             except Exception as error:
-                print(f"Embedding failed: {error!r}", file=sys.stderr, flush=True)
+                traceback.print_exc()
                 self.send_error_json(500, f"embedding failed: {error}")
                 return
 
