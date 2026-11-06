@@ -1933,7 +1933,7 @@ export async function setImageSearchProvider(provider, connection) {
 
 export async function testEmbeddingServerConnection(provider, connection) {
   try {
-    return await invoke('test_embedding_server_connection', { settings: buildServerSettings(provider, connection) });
+    return await invoke('test_embed_server_connection', { settings: buildServerSettings(provider, connection) });
   } catch (error) {
     console.error('testEmbeddingServerConnection error:', error);
     return { ok: false, modelAvailable: false, models: [], imagesSupported: null, error: String(error) };
