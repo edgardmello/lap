@@ -437,6 +437,80 @@
                   @change="applyEmbeddingProvider"
                 />
               </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.score_floor') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.score_floor_hint') }}</div>
+                  <div v-if="searchCalibrationText" class="text-xs text-base-content/50">{{ searchCalibrationText }}</div>
+                </div>
+                <select
+                  class="select select-bordered select-sm min-w-36 shrink-0"
+                  v-model="scoreAdjustment.mode"
+                  @change="onScoreAdjustmentChange"
+                >
+                  <option value="auto">{{ $t('settings.image_search.score_mode_auto') }}</option>
+                  <option value="shift">{{ $t('settings.image_search.score_mode_shift') }}</option>
+                  <option value="manual">{{ $t('settings.image_search.score_mode_manual') }}</option>
+                </select>
+              </div>
+              <div
+                v-if="scoreAdjustment.mode === 'shift'"
+                class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200"
+              >
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.score_floor_shift') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.score_floor_shift_hint') }}</div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <input
+                    class="range range-xs w-40"
+                    type="range"
+                    min="-0.10"
+                    max="0.10"
+                    step="0.01"
+                    v-model.number="scoreAdjustment.floorShift"
+                    @change="onScoreAdjustmentChange"
+                  />
+                  <span class="text-sm text-base-content/60 w-12 text-right tabular-nums">{{ scoreFloorShiftText }}</span>
+                </div>
+              </div>
+              <div
+                v-if="scoreAdjustment.mode === 'manual'"
+                class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200"
+              >
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.score_floor_value') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.score_floor_value_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-28 shrink-0"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  v-model.number="scoreAdjustment.floor"
+                  @change="onScoreAdjustmentChange"
+                />
+              </div>
+              <div
+                v-if="scoreAdjustment.mode !== 'auto'"
+                class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200"
+              >
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.score_margin') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.score_margin_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-28 shrink-0"
+                  type="number"
+                  min="0.005"
+                  max="0.2"
+                  step="0.005"
+                  :placeholder="$t('settings.image_search.score_mode_auto')"
+                  v-model.number="scoreAdjustment.margin"
+                  @change="onScoreAdjustmentChange"
+                />
+              </div>
               <div class="flex items-center justify-between gap-4 px-1">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div class="text-xs" :class="serverConnectionFailed ? 'text-error' : 'text-base-content/70'">{{ serverConnectionMessage }}</div>
@@ -868,7 +942,7 @@ import { emit } from '@tauri-apps/api/event';
 import { ask, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 import { config, libConfig } from '@/common/config';
-import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
+import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, defaultScoreAdjustment, embeddingServerDefaults, isEmbeddingServer } from '@/stores/configStore';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
 import {
@@ -892,6 +966,7 @@ import {
   cancelEmbeddingReindex,
   getEmbeddingReindexStatus,
   getEmbeddingCoverage,
+  getSearchCalibration,
   listenEmbeddingReindexProgress,
 } from '@/common/api';
 import { formatFileSize, isLinux, isMac, setTheme, SCALE_VALUES } from '@/common/utils';
@@ -1504,10 +1579,66 @@ const isServerProvider = computed(() => serverProvider.value !== null);
 const serverConnection = computed(() => {
   const provider = serverProvider.value || 'omlx';
   if (!config.settings.imageSearch[provider]) {
-    config.settings.imageSearch[provider] = { ...EMBEDDING_SERVER_DEFAULTS[provider] };
+    config.settings.imageSearch[provider] = embeddingServerDefaults(provider);
   }
   return config.settings.imageSearch[provider];
 });
+
+const scoreAdjustment = computed(() => {
+  const connection = serverConnection.value;
+  if (!connection.scoreAdjustment) connection.scoreAdjustment = defaultScoreAdjustment();
+  return connection.scoreAdjustment;
+});
+
+// Calibrated score band of the current library, shown next to the manual
+// adjustment. The measurement runs in the background after the provider or
+// library changes, so it is fetched again until it lands.
+const searchCalibration = ref<any>(null);
+let searchCalibrationTimer: ReturnType<typeof setTimeout> | null = null;
+
+const syncSearchCalibration = async (attempts = 5) => {
+  if (searchCalibrationTimer) clearTimeout(searchCalibrationTimer);
+  searchCalibrationTimer = null;
+  if (!isServerProvider.value) {
+    searchCalibration.value = null;
+    return;
+  }
+  searchCalibration.value = await getSearchCalibration();
+  if (searchCalibration.value && !searchCalibration.value.calibrated && attempts > 1) {
+    searchCalibrationTimer = setTimeout(() => void syncSearchCalibration(attempts - 1), 2000);
+  }
+};
+
+const formatScore = (value: any) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : '-');
+
+const searchCalibrationText = computed(() => {
+  const calibration = searchCalibration.value;
+  if (!calibration) return '';
+  const measured = calibration.measured || {};
+  const effective = calibration.effective || {};
+  const source = calibration.calibrated
+    ? t('settings.image_search.score_calibrated', { floor: formatScore(measured.floor), margin: formatScore(measured.margin) })
+    : t('settings.image_search.score_not_calibrated', { floor: formatScore(measured.floor), margin: formatScore(measured.margin) });
+  if (scoreAdjustment.value.mode === 'auto') return source;
+  return `${source} · ${t('settings.image_search.score_in_use', { floor: formatScore(effective.floor), margin: formatScore(effective.margin) })}`;
+});
+
+const scoreFloorShiftText = computed(() => {
+  const shift = Number(scoreAdjustment.value.floorShift || 0);
+  return `${shift > 0 ? '+' : ''}${shift.toFixed(2)}`;
+});
+
+const onScoreAdjustmentChange = async () => {
+  const adjustment = scoreAdjustment.value;
+  if (adjustment.mode === 'manual' && !Number.isFinite(Number(adjustment.floor ?? NaN))) {
+    // Start a manual floor from the value in use rather than an empty field.
+    const floor = searchCalibration.value?.effective?.floor;
+    if (Number.isFinite(Number(floor))) adjustment.floor = Number(Number(floor).toFixed(3));
+  }
+  if (adjustment.margin === '') adjustment.margin = null;
+  await applyEmbeddingProvider();
+  await syncSearchCalibration(1);
+};
 
 const serverModelPlaceholder = computed(() => {
   return serverProvider.value === 'openai'
@@ -1565,6 +1696,7 @@ const applyEmbeddingProvider = async () => {
   } catch (error) {
     toast.error(error?.message || String(error));
   }
+  void syncSearchCalibration();
 };
 
 const onEmbeddingProviderChange = async (event: Event) => {
@@ -1742,10 +1874,13 @@ onMounted(async () => {
     if (event?.payload?.state === 'finished') {
       reindexRecommended.value = false;
       void syncEmbeddingCoverage();
+      // The re-index starts a fresh measurement of the score band.
+      searchCalibrationTimer = setTimeout(() => void syncSearchCalibration(), 2000);
     }
   });
   await syncEmbeddingReindexStatus();
   await syncEmbeddingCoverage();
+  void syncSearchCalibration();
   await syncImageSearchModelStatus();
   applyWindowScale(Number(config.settings.scale || 1));
   dbStorageDir.value = (await getDbStorageDir()) || '';
@@ -1791,6 +1926,10 @@ onUnmounted(() => {
   if (unlistenEmbeddingReindexProgress) {
     unlistenEmbeddingReindexProgress();
     unlistenEmbeddingReindexProgress = null;
+  }
+  if (searchCalibrationTimer) {
+    clearTimeout(searchCalibrationTimer);
+    searchCalibrationTimer = null;
   }
   document.documentElement.style.fontSize = '';
   window.removeEventListener('keydown', handleKeyDown);

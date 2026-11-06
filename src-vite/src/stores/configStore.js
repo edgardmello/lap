@@ -11,6 +11,26 @@ import { SIDEBAR, MAP_MARKER_SIZES } from '@/common/constants';
 // server (LM Studio, LocalAI, vLLM, llama.cpp, ...).
 export const EMBEDDING_SERVERS = ['omlx', 'ollama', 'openai'];
 
+// Manual tuning of the search score band (Settings > Image search > Advanced).
+// mode 'auto' uses the calibrated band; 'shift' moves the calibrated floor by
+// floorShift; 'manual' uses floor as the floor. margin (null = calibrated)
+// applies in both non-automatic modes.
+export function defaultScoreAdjustment() {
+  return { mode: 'auto', floorShift: 0, floor: null, margin: null };
+}
+
+// What the backend receives for a connection's score adjustment.
+export function scoreAdjustmentFor(connection) {
+  const adjustment = { ...defaultScoreAdjustment(), ...(connection?.scoreAdjustment || {}) };
+  const number = (value) => (value === null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value));
+  const margin = number(adjustment.margin);
+  if (adjustment.mode === 'shift') return { floorShift: number(adjustment.floorShift) ?? 0, floor: null, margin };
+  if (adjustment.mode === 'manual' && number(adjustment.floor) !== null) {
+    return { floorShift: 0, floor: number(adjustment.floor), margin };
+  }
+  return { floorShift: 0, floor: null, margin: null };
+}
+
 export const EMBEDDING_SERVER_DEFAULTS = {
   omlx: {
     url: 'http://127.0.0.1:8000',
@@ -18,6 +38,7 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: 'mlx-community/embeddinggemma-2-bf16',
     dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
     translationModel: 'Qwen2.5-VL-3B-Instruct-4bit',
+    scoreAdjustment: defaultScoreAdjustment(),
   },
   ollama: {
     url: 'http://127.0.0.1:11434',
@@ -25,6 +46,7 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: 'embeddinggemma-2',
     dimensionsIndex: 0,
     translationModel: '',
+    scoreAdjustment: defaultScoreAdjustment(),
   },
   openai: {
     url: 'http://127.0.0.1:1234/v1',
@@ -32,8 +54,14 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: '',
     dimensionsIndex: 0,
     translationModel: '',
+    scoreAdjustment: defaultScoreAdjustment(),
   },
 };
+
+// Fresh defaults for a server connection; nested objects are not shared.
+export function embeddingServerDefaults(server) {
+  return { ...EMBEDDING_SERVER_DEFAULTS[server], scoreAdjustment: defaultScoreAdjustment() };
+}
 
 export function isEmbeddingServer(provider) {
   return EMBEDDING_SERVERS.includes(provider);
@@ -231,9 +259,9 @@ export const useConfigStore = defineStore('configStore', {
         provider: 'builtin',       // 'builtin' (bundled CLIP) | an embedding server: 'omlx' | 'ollama' | 'openai'
         // Connection for each embedding server, kept separately so switching
         // servers does not lose the other's settings.
-        omlx: { ...EMBEDDING_SERVER_DEFAULTS.omlx },
-        ollama: { ...EMBEDDING_SERVER_DEFAULTS.ollama },
-        openai: { ...EMBEDDING_SERVER_DEFAULTS.openai },
+        omlx: embeddingServerDefaults('omlx'),
+        ollama: embeddingServerDefaults('ollama'),
+        openai: embeddingServerDefaults('openai'),
       },
 
       // similar photos settings
@@ -477,7 +505,7 @@ export const useConfigStore = defineStore('configStore', {
       const search = this.settings.imageSearch;
       search.provider = isEmbeddingServer(provider) ? provider : 'builtin';
       for (const server of EMBEDDING_SERVERS) {
-        if (servers[server]) search[server] = { ...EMBEDDING_SERVER_DEFAULTS[server], ...servers[server] };
+        if (servers[server]) search[server] = { ...embeddingServerDefaults(server), ...servers[server] };
       }
     },
     setImageSearchServerSettings(provider, connection) {
@@ -530,7 +558,7 @@ export const useConfigStore = defineStore('configStore', {
           if (search) {
             search.provider = isEmbeddingServer(search.provider) ? search.provider : 'builtin';
             for (const server of EMBEDDING_SERVERS) {
-              search[server] = { ...EMBEDDING_SERVER_DEFAULTS[server], ...search[server] };
+              search[server] = { ...embeddingServerDefaults(server), ...search[server] };
             }
           }
         }

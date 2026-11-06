@@ -3453,6 +3453,28 @@ pub fn get_embedding_reindex_status(
     state.status()
 }
 
+/// score band image searches of a library use with the active provider:
+/// the measured (or default) calibration and the one after the user's
+/// adjustment in Settings
+#[tauri::command]
+pub fn get_search_calibration(library_id: Option<String>) -> Result<serde_json::Value, String> {
+    let Some(settings) = t_embed_server::active_settings() else {
+        return Ok(serde_json::Value::Null);
+    };
+    let library_id = library_id.unwrap_or(t_config::current_library_id()?);
+    let (measured, calibrated) = t_embed_server::measured_calibration(&settings, &library_id);
+    let effective = settings.score_adjustment.apply(measured);
+    let band = |c: t_embed_server::ScoreCalibration| {
+        serde_json::json!({ "floor": c.floor, "margin": c.margin, "baseline": c.baseline })
+    };
+    Ok(serde_json::json!({
+        "model": settings.model_id(),
+        "calibrated": calibrated,
+        "measured": band(measured),
+        "effective": band(effective),
+    }))
+}
+
 /// how many photos have embeddings for the active model
 #[tauri::command]
 pub async fn get_embedding_coverage() -> Result<serde_json::Value, String> {

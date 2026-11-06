@@ -194,13 +194,64 @@ fn calibration_key(settings: &EmbeddingServerSettings, library_id: &str) -> Cali
 /// of a library/model pair starts a background measurement and uses the
 /// hand-tuned defaults until it lands.
 pub fn calibration_for(settings: &EmbeddingServerSettings, library_id: &str) -> ScoreCalibration {
+    settings.score_adjustment.apply(measured_calibration(settings, library_id).0)
+}
+
+/// The measured band (or the defaults while none is stored) and whether it
+/// came from a measurement of this library.
+pub fn measured_calibration(
+    settings: &EmbeddingServerSettings,
+    library_id: &str,
+) -> (ScoreCalibration, bool) {
     let key = calibration_key(settings, library_id);
     let stored = calibration_store().lock().ok().and_then(|store| store.get(&key));
     match stored {
-        Some(result) => result.unwrap_or_default(),
+        Some(Some(calibration)) => (calibration, true),
+        Some(None) => (ScoreCalibration::default(), false),
         None => {
             request_calibration(settings.clone(), library_id, false);
-            ScoreCalibration::default()
+            (ScoreCalibration::default(), false)
+        }
+    }
+}
+
+/// Manual tuning of the search score band, set in Settings > Image search
+/// > Advanced. The default leaves the calibrated band untouched. A manual
+/// floor replaces the calibrated one (the search still lowers it for
+/// queries that score low against the whole library, as it does the
+/// calibrated floor); otherwise `floor_shift` moves the calibrated floor.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScoreAdjustment {
+    pub floor_shift: f32,
+    pub floor: Option<f32>,
+    pub margin: Option<f32>,
+}
+
+const MAX_FLOOR_SHIFT: f32 = 0.20;
+
+impl ScoreAdjustment {
+    /// Drop non-finite values and keep the rest in a usable range.
+    fn sanitized(self) -> Self {
+        let finite = |value: f32| value.is_finite().then_some(value);
+        Self {
+            floor_shift: finite(self.floor_shift)
+                .unwrap_or(0.0)
+                .clamp(-MAX_FLOOR_SHIFT, MAX_FLOOR_SHIFT),
+            floor: self.floor.and_then(finite).map(|floor| floor.clamp(0.0, 1.0)),
+            margin: self.margin.and_then(finite).map(|margin| margin.clamp(0.005, 0.20)),
+        }
+    }
+
+    pub fn apply(&self, calibration: ScoreCalibration) -> ScoreCalibration {
+        let floor = self
+            .floor
+            .unwrap_or(calibration.floor + self.floor_shift)
+            .clamp(0.0, 1.0);
+        ScoreCalibration {
+            floor,
+            margin: self.margin.unwrap_or(calibration.margin),
+            baseline: calibration.baseline,
         }
     }
 }
@@ -409,6 +460,10 @@ pub struct EmbeddingServerSettings {
     /// English before they are embedded; empty disables translation.
     #[serde(default)]
     pub translation_model: String,
+    /// Manual tuning of the search score band; changes apply to the next
+    /// search without a re-index or a new calibration.
+    #[serde(default)]
+    pub score_adjustment: ScoreAdjustment,
 }
 
 fn default_url() -> String {
@@ -433,6 +488,7 @@ impl EmbeddingServerSettings {
         settings.model = settings.model.trim().to_string();
         settings.api_key = settings.api_key.trim().to_string();
         settings.translation_model = settings.translation_model.trim().to_string();
+        settings.score_adjustment = settings.score_adjustment.sanitized();
         let label = settings.api.label();
         if !settings.url.starts_with("http://") && !settings.url.starts_with("https://") {
             return Err(format!("The {} URL must start with http:// or https://", label));
@@ -1523,6 +1579,7 @@ mod tests {
             model: model.into(),
             dimensions,
             translation_model: String::new(),
+            score_adjustment: ScoreAdjustment::default(),
         }
     }
 
@@ -1684,6 +1741,44 @@ mod tests {
             measure_band(one, &vectors, ProbeSpread::Pooled),
             measure_band(one, &vectors, ProbeSpread::WithinProbe)
         );
+    }
+
+    #[test]
+    fn default_score_adjustment_keeps_the_calibrated_band() {
+        let calibrated = ScoreCalibration { floor: 0.71, margin: 0.035, baseline: 0.58 };
+        assert_eq!(ScoreAdjustment::default().apply(calibrated), calibrated);
+        assert_eq!(ScoreAdjustment::default().apply(ScoreCalibration::default()), ScoreCalibration::default());
+    }
+
+    #[test]
+    fn score_adjustment_shifts_or_replaces_the_floor() {
+        let calibrated = ScoreCalibration { floor: 0.30, margin: 0.05, baseline: 0.13 };
+        let shifted = ScoreAdjustment { floor_shift: -0.04, ..Default::default() }.apply(calibrated);
+        assert!((shifted.floor - 0.26).abs() < 1e-6);
+        assert_eq!((shifted.margin, shifted.baseline), (0.05, 0.13), "only the floor moves");
+
+        let manual = ScoreAdjustment { floor_shift: 0.10, floor: Some(0.22), margin: Some(0.08) }.apply(calibrated);
+        assert_eq!((manual.floor, manual.margin, manual.baseline), (0.22, 0.08, 0.13), "a manual floor wins over the shift");
+    }
+
+    #[test]
+    fn score_adjustment_is_sanitized_by_normalization() {
+        let mut raw = settings("eg2", None);
+        raw.score_adjustment = ScoreAdjustment { floor_shift: 5.0, floor: Some(f32::NAN), margin: Some(-1.0) };
+        let adjustment = raw.normalized().unwrap().score_adjustment;
+        assert_eq!(adjustment, ScoreAdjustment { floor_shift: MAX_FLOOR_SHIFT, floor: None, margin: Some(0.005) });
+    }
+
+    #[test]
+    fn score_adjustment_defaults_when_missing_from_settings() {
+        let parsed: EmbeddingServerSettings =
+            serde_json::from_str(r#"{"api":"openai","url":"http://h/v1","model":"m"}"#).unwrap();
+        assert_eq!(parsed.score_adjustment, ScoreAdjustment::default());
+        let partial: EmbeddingServerSettings = serde_json::from_str(
+            r#"{"api":"openai","url":"http://h/v1","model":"m","scoreAdjustment":{"floorShift":-0.03}}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.score_adjustment, ScoreAdjustment { floor_shift: -0.03, floor: None, margin: None });
     }
 
     #[test]
