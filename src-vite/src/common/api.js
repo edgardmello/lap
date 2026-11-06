@@ -3,7 +3,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { locale } from '@tauri-apps/plugin-os';
 import { listen } from '@tauri-apps/api/event';
 import { config, libConfig } from '@/common/config';
-import { EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer } from '@/stores/configStore';
+import { EMBEDDING_SERVER_DEFAULTS, isEmbeddingServer, scoreAdjustmentFor } from '@/stores/configStore';
 import { separator, localeComp, formatTimestamp } from '@/common/utils';
 import { getRawDisplayOptions } from './rawDisplay';
 
