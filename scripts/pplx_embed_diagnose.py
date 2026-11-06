@@ -57,7 +57,21 @@ def data_dirs() -> list[str]:
 
 def find_databases(extra: list[str]) -> list[str]:
     paths = list(extra)
-    for directory in data_dirs():
+    directories = data_dirs()
+    # Libraries can live in a custom folder (Settings > storage), recorded as
+    # db_storage_dir in app-config.json.
+    for directory in list(directories):
+        try:
+            with open(os.path.join(directory, "app-config.json"), encoding="utf-8") as f:
+                custom = json.load(f).get("db_storage_dir")
+        except (OSError, ValueError):
+            custom = None
+        if custom:
+            print(f"{directory}: libraries stored in {custom}")
+            directories.append(custom)
+    if not directories:
+        print("No Lap data folder found under Application Support")
+    for directory in directories:
         for pattern in ("*.db", "**/*.db", "*.sqlite", "**/*.sqlite"):
             paths += glob.glob(os.path.join(directory, pattern), recursive=True)
     result = []
