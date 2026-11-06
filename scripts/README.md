@@ -84,3 +84,25 @@ uses Apple Silicon (MPS) or CUDA when available and the CPU otherwise; see
 Then in Lap, open **Settings > Image search**, choose **OpenAI-compatible
 server**, set the URL to `http://127.0.0.1:8090/v1` and the model to
 `perplexity-ai/pplx-embed-v2-context-0.6b`, test the connection, and re-index.
+
+### Portuguese and other non-English searches
+
+pplx matches English text to photos better than other languages, so
+"cachorro" and "dog" can return different photos. Lap's **Search translation
+model** setting translates each search into English before embedding it, by
+calling `/v1/chat/completions` on the same server. The pplx server has no chat
+model, so give it a local chat server to forward those requests to:
+
+```bash
+# Ollama (pull a small instruct model first, e.g. `ollama pull qwen2.5:3b`)
+python scripts/pplx_embed_server.py --chat-upstream http://127.0.0.1:11434/v1
+
+# oMLX, which needs its own API key
+PPLX_CHAT_API_KEY=<oMLX key> python scripts/pplx_embed_server.py \
+    --chat-upstream http://127.0.0.1:8000/v1
+```
+
+Then set **Search translation model** in Lap to a model that chat server
+serves (for example `qwen2.5:3b` in Ollama or `Qwen2.5-VL-3B-Instruct-4bit` in
+oMLX). The upstream's models are also listed at `/v1/models`. No re-index is
+needed: only searches change.
