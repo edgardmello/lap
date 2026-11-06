@@ -105,3 +105,17 @@ test('server connections do not share their score adjustment', async () => {
   config.syncImageSearchProvider({ provider: 'openai', ollama: { model: 'x' } });
   assert.equal(search.ollama.scoreAdjustment.mode, 'auto', 'synced connections get their own default');
 });
+
+test('api.js imports every configStore export it uses', async () => {
+  // A missing import only fails at runtime ("Can't find variable"), when
+  // Settings tests the server connection.
+  const api = await readFile(new URL('../src/common/api.js', import.meta.url), 'utf8');
+  const exported = [...storeSource.matchAll(/export (?:async )?(?:function|const) (\w+)/g)].map((m) => m[1]);
+  const importLine = api.match(/import \{([^}]*)\} from '@\/stores\/configStore'/);
+  const imported = new Set((importLine?.[1] || '').split(',').map((name) => name.trim()).filter(Boolean));
+  for (const name of exported) {
+    if (new RegExp(`\\b${name}\\(`).test(api)) {
+      assert.ok(imported.has(name), `api.js uses ${name} without importing it`);
+    }
+  }
+});
