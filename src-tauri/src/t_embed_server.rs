@@ -194,13 +194,64 @@ fn calibration_key(settings: &EmbeddingServerSettings, library_id: &str) -> Cali
 /// of a library/model pair starts a background measurement and uses the
 /// hand-tuned defaults until it lands.
 pub fn calibration_for(settings: &EmbeddingServerSettings, library_id: &str) -> ScoreCalibration {
+    settings.score_adjustment.apply(measured_calibration(settings, library_id).0)
+}
+
+/// The measured band (or the defaults while none is stored) and whether it
+/// came from a measurement of this library.
+pub fn measured_calibration(
+    settings: &EmbeddingServerSettings,
+    library_id: &str,
+) -> (ScoreCalibration, bool) {
     let key = calibration_key(settings, library_id);
     let stored = calibration_store().lock().ok().and_then(|store| store.get(&key));
     match stored {
-        Some(result) => result.unwrap_or_default(),
+        Some(Some(calibration)) => (calibration, true),
+        Some(None) => (ScoreCalibration::default(), false),
         None => {
             request_calibration(settings.clone(), library_id, false);
-            ScoreCalibration::default()
+            (ScoreCalibration::default(), false)
+        }
+    }
+}
+
+/// Manual tuning of the search score band, set in Settings > Image search
+/// > Advanced. The default leaves the calibrated band untouched. A manual
+/// floor replaces the calibrated one (the search still lowers it for
+/// queries that score low against the whole library, as it does the
+/// calibrated floor); otherwise `floor_shift` moves the calibrated floor.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScoreAdjustment {
+    pub floor_shift: f32,
+    pub floor: Option<f32>,
+    pub margin: Option<f32>,
+}
+
+const MAX_FLOOR_SHIFT: f32 = 0.20;
+
+impl ScoreAdjustment {
+    /// Drop non-finite values and keep the rest in a usable range.
+    fn sanitized(self) -> Self {
+        let finite = |value: f32| value.is_finite().then_some(value);
+        Self {
+            floor_shift: finite(self.floor_shift)
+                .unwrap_or(0.0)
+                .clamp(-MAX_FLOOR_SHIFT, MAX_FLOOR_SHIFT),
+            floor: self.floor.and_then(finite).map(|floor| floor.clamp(0.0, 1.0)),
+            margin: self.margin.and_then(finite).map(|margin| margin.clamp(0.005, 0.20)),
+        }
+    }
+
+    pub fn apply(&self, calibration: ScoreCalibration) -> ScoreCalibration {
+        let floor = self
+            .floor
+            .unwrap_or(calibration.floor + self.floor_shift)
+            .clamp(0.0, 1.0);
+        ScoreCalibration {
+            floor,
+            margin: self.margin.unwrap_or(calibration.margin),
+            baseline: calibration.baseline,
         }
     }
 }
@@ -281,7 +332,12 @@ fn calibrate(
             CALIBRATION_SAMPLE_SIZE,
         )
     })?;
-    Ok(measure_band(&probes, &vectors))
+    let spread = if is_pplx_embed_model(&settings.model) {
+        ProbeSpread::WithinProbe
+    } else {
+        ProbeSpread::Pooled
+    };
+    Ok(measure_band(&probes, &vectors, spread))
 }
 
 pub(crate) fn calibration_probes(settings: &EmbeddingServerSettings) -> Result<Vec<Vec<f32>>, String> {
@@ -291,21 +347,45 @@ pub(crate) fn calibration_probes(settings: &EmbeddingServerSettings) -> Result<V
         .collect()
 }
 
+/// How the calibration measures the spread (sigma) of probe/library scores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeSpread {
+    /// One sigma over every probe/photo score. Hand-checked for
+    /// EmbeddingGemma, whose probes all sit at about the same level.
+    Pooled,
+    /// Sigma of each probe's scores around its own mean, averaged. The
+    /// pplx-embed-v2 probes sit at very different levels (measured on real
+    /// libraries: "an animal" ~0.08 vs "a photo of a person" ~0.20), so the
+    /// pooled sigma is mostly that gap between probes. The search filter
+    /// already moves the floor with each query's own mean, so counting the
+    /// gap in sigma as well put the floor above the real matches ("cachorro"
+    /// found none of the ~50 dog photos in a family library).
+    WithinProbe,
+}
+
 /// Score band from probe/library similarities; None when the sample is too
 /// small to trust.
-pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<ScoreCalibration> {
+pub(crate) fn measure_band(
+    probes: &[Vec<f32>],
+    vectors: &[Vec<f32>],
+    spread: ProbeSpread,
+) -> Option<ScoreCalibration> {
     if vectors.len() < CALIBRATION_MIN_VECTORS || probes.is_empty() {
         return None;
     }
-    let mut samples = Vec::with_capacity(probes.len() * vectors.len());
-    for probe in probes {
-        for vector in vectors {
-            samples.push(cosine_similarity(probe, vector));
+    let per_probe: Vec<Vec<f32>> = probes
+        .iter()
+        .map(|probe| vectors.iter().map(|vector| cosine_similarity(probe, vector)).collect())
+        .collect();
+    let all: Vec<f32> = per_probe.iter().flatten().copied().collect();
+    let (mean, pooled_variance) = mean_and_variance(&all);
+    let variance = match spread {
+        ProbeSpread::Pooled => pooled_variance,
+        ProbeSpread::WithinProbe => {
+            per_probe.iter().map(|scores| mean_and_variance(scores).1).sum::<f32>()
+                / per_probe.len() as f32
         }
-    }
-    let count = samples.len() as f32;
-    let mean = samples.iter().sum::<f32>() / count;
-    let variance = samples.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>() / count;
+    };
     let sigma = variance.sqrt();
 
     // The lower rail only guards against a degenerate sample: cross-modal
@@ -315,6 +395,13 @@ pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<
     let floor = (mean + 2.75 * sigma).clamp(MIN_CALIBRATED_FLOOR, 0.80);
     let margin = (1.5 * sigma).clamp(0.02, 0.10);
     Some(ScoreCalibration { floor, margin, baseline: mean })
+}
+
+fn mean_and_variance(values: &[f32]) -> (f32, f32) {
+    let count = values.len() as f32;
+    let mean = values.iter().sum::<f32>() / count;
+    let variance = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / count;
+    (mean, variance)
 }
 
 /// Wire format of the embedding server.
@@ -373,6 +460,10 @@ pub struct EmbeddingServerSettings {
     /// English before they are embedded; empty disables translation.
     #[serde(default)]
     pub translation_model: String,
+    /// Manual tuning of the search score band; changes apply to the next
+    /// search without a re-index or a new calibration.
+    #[serde(default)]
+    pub score_adjustment: ScoreAdjustment,
 }
 
 fn default_url() -> String {
@@ -397,6 +488,7 @@ impl EmbeddingServerSettings {
         settings.model = settings.model.trim().to_string();
         settings.api_key = settings.api_key.trim().to_string();
         settings.translation_model = settings.translation_model.trim().to_string();
+        settings.score_adjustment = settings.score_adjustment.sanitized();
         let label = settings.api.label();
         if !settings.url.starts_with("http://") && !settings.url.starts_with("https://") {
             return Err(format!("The {} URL must start with http:// or https://", label));
@@ -1487,6 +1579,7 @@ mod tests {
             model: model.into(),
             dimensions,
             translation_model: String::new(),
+            score_adjustment: ScoreAdjustment::default(),
         }
     }
 
@@ -1599,8 +1692,93 @@ mod tests {
                 vec![cos, (1.0 - cos * cos).sqrt()]
             })
             .collect();
-        let band = measure_band(&[probe], &vectors).unwrap();
+        let band = measure_band(&[probe], &vectors, ProbeSpread::Pooled).unwrap();
         assert!(band.floor < 0.35 && band.floor > band.baseline, "floor {} tracks the band", band.floor);
+    }
+
+    /// Unit vectors scoring 0.06-0.10 against probe x and 0.18-0.22 against
+    /// probe y: two probes at different levels, each with a narrow spread.
+    fn two_level_library() -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        let probes = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+        let vectors = (0..40)
+            .map(|i| {
+                let step = (i % 5) as f32 / 4.0;
+                let (x, y) = (0.06 + 0.04 * step, 0.18 + 0.04 * step);
+                vec![x, y, (1.0 - x * x - y * y).sqrt()]
+            })
+            .collect();
+        (probes, vectors)
+    }
+
+    #[test]
+    fn pooled_spread_keeps_the_previous_band() {
+        let (probes, vectors) = two_level_library();
+        let band = measure_band(&probes, &vectors, ProbeSpread::Pooled).unwrap();
+        let scores: Vec<f32> = probes
+            .iter()
+            .flat_map(|p| vectors.iter().map(|v| cosine_similarity(p, v)))
+            .collect();
+        let (mean, variance) = mean_and_variance(&scores);
+        assert!((band.baseline - mean).abs() < 1e-6);
+        assert!((band.floor - (mean + 2.75 * variance.sqrt())).abs() < 1e-6);
+        assert!((band.margin - (1.5 * variance.sqrt()).clamp(0.02, 0.10)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn within_probe_spread_ignores_the_gap_between_probes() {
+        let (probes, vectors) = two_level_library();
+        let pooled = measure_band(&probes, &vectors, ProbeSpread::Pooled).unwrap();
+        let within = measure_band(&probes, &vectors, ProbeSpread::WithinProbe).unwrap();
+        assert_eq!(within.baseline, pooled.baseline, "the baseline is the same mean");
+        // Each probe spreads by ~0.014; pooled sigma is ~0.06 from the gap.
+        assert!(within.floor < 0.20, "floor {} sits just above the band", within.floor);
+        assert!(pooled.floor > 0.28, "pooled floor {} counts the gap", pooled.floor);
+        assert!(within.margin < 0.03 && within.margin < pooled.margin, "margin {} follows the narrow spread", within.margin);
+
+        // With a single probe there is no gap, so both agree.
+        let one = &probes[..1];
+        assert_eq!(
+            measure_band(one, &vectors, ProbeSpread::Pooled),
+            measure_band(one, &vectors, ProbeSpread::WithinProbe)
+        );
+    }
+
+    #[test]
+    fn default_score_adjustment_keeps_the_calibrated_band() {
+        let calibrated = ScoreCalibration { floor: 0.71, margin: 0.035, baseline: 0.58 };
+        assert_eq!(ScoreAdjustment::default().apply(calibrated), calibrated);
+        assert_eq!(ScoreAdjustment::default().apply(ScoreCalibration::default()), ScoreCalibration::default());
+    }
+
+    #[test]
+    fn score_adjustment_shifts_or_replaces_the_floor() {
+        let calibrated = ScoreCalibration { floor: 0.30, margin: 0.05, baseline: 0.13 };
+        let shifted = ScoreAdjustment { floor_shift: -0.04, ..Default::default() }.apply(calibrated);
+        assert!((shifted.floor - 0.26).abs() < 1e-6);
+        assert_eq!((shifted.margin, shifted.baseline), (0.05, 0.13), "only the floor moves");
+
+        let manual = ScoreAdjustment { floor_shift: 0.10, floor: Some(0.22), margin: Some(0.08) }.apply(calibrated);
+        assert_eq!((manual.floor, manual.margin, manual.baseline), (0.22, 0.08, 0.13), "a manual floor wins over the shift");
+    }
+
+    #[test]
+    fn score_adjustment_is_sanitized_by_normalization() {
+        let mut raw = settings("eg2", None);
+        raw.score_adjustment = ScoreAdjustment { floor_shift: 5.0, floor: Some(f32::NAN), margin: Some(-1.0) };
+        let adjustment = raw.normalized().unwrap().score_adjustment;
+        assert_eq!(adjustment, ScoreAdjustment { floor_shift: MAX_FLOOR_SHIFT, floor: None, margin: Some(0.005) });
+    }
+
+    #[test]
+    fn score_adjustment_defaults_when_missing_from_settings() {
+        let parsed: EmbeddingServerSettings =
+            serde_json::from_str(r#"{"api":"openai","url":"http://h/v1","model":"m"}"#).unwrap();
+        assert_eq!(parsed.score_adjustment, ScoreAdjustment::default());
+        let partial: EmbeddingServerSettings = serde_json::from_str(
+            r#"{"api":"openai","url":"http://h/v1","model":"m","scoreAdjustment":{"floorShift":-0.03}}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.score_adjustment, ScoreAdjustment { floor_shift: -0.03, floor: None, margin: None });
     }
 
     #[test]

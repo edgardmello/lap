@@ -409,6 +409,7 @@ async fn main() {
             t_cmds::cancel_embedding_reindex,
             t_cmds::get_embedding_reindex_status,
             t_cmds::get_embedding_coverage,
+            t_cmds::get_search_calibration,
             t_cmds::generate_embedding,
             t_cmds::search_similar_images,
             // person (face recognition)

@@ -1917,6 +1917,7 @@ function buildServerSettings(provider, connection) {
     model: connection?.model || defaults.model,
     dimensions,
     translationModel: connection?.translationModel || '',
+    scoreAdjustment: scoreAdjustmentFor(connection),
   };
 }
 
@@ -1968,6 +1969,17 @@ export async function getEmbeddingReindexStatus() {
 
 export function listenEmbeddingReindexProgress(callback) {
   return listen('embedding_reindex_progress', callback);
+}
+
+// Score band searches of the current library use with the active server
+// provider: { model, calibrated, measured: {floor, margin}, effective: {...} }.
+export async function getSearchCalibration() {
+  try {
+    return await invoke('get_search_calibration', {});
+  } catch (error) {
+    console.error('getSearchCalibration error:', error);
+    return null;
+  }
 }
 
 export async function getEmbeddingCoverage() {
