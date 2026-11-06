@@ -281,7 +281,12 @@ fn calibrate(
             CALIBRATION_SAMPLE_SIZE,
         )
     })?;
-    Ok(measure_band(&probes, &vectors))
+    let spread = if is_pplx_embed_model(&settings.model) {
+        ProbeSpread::WithinProbe
+    } else {
+        ProbeSpread::Pooled
+    };
+    Ok(measure_band(&probes, &vectors, spread))
 }
 
 pub(crate) fn calibration_probes(settings: &EmbeddingServerSettings) -> Result<Vec<Vec<f32>>, String> {
@@ -291,21 +296,45 @@ pub(crate) fn calibration_probes(settings: &EmbeddingServerSettings) -> Result<V
         .collect()
 }
 
+/// How the calibration measures the spread (sigma) of probe/library scores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeSpread {
+    /// One sigma over every probe/photo score. Hand-checked for
+    /// EmbeddingGemma, whose probes all sit at about the same level.
+    Pooled,
+    /// Sigma of each probe's scores around its own mean, averaged. The
+    /// pplx-embed-v2 probes sit at very different levels (measured on real
+    /// libraries: "an animal" ~0.08 vs "a photo of a person" ~0.20), so the
+    /// pooled sigma is mostly that gap between probes. The search filter
+    /// already moves the floor with each query's own mean, so counting the
+    /// gap in sigma as well put the floor above the real matches ("cachorro"
+    /// found none of the ~50 dog photos in a family library).
+    WithinProbe,
+}
+
 /// Score band from probe/library similarities; None when the sample is too
 /// small to trust.
-pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<ScoreCalibration> {
+pub(crate) fn measure_band(
+    probes: &[Vec<f32>],
+    vectors: &[Vec<f32>],
+    spread: ProbeSpread,
+) -> Option<ScoreCalibration> {
     if vectors.len() < CALIBRATION_MIN_VECTORS || probes.is_empty() {
         return None;
     }
-    let mut samples = Vec::with_capacity(probes.len() * vectors.len());
-    for probe in probes {
-        for vector in vectors {
-            samples.push(cosine_similarity(probe, vector));
+    let per_probe: Vec<Vec<f32>> = probes
+        .iter()
+        .map(|probe| vectors.iter().map(|vector| cosine_similarity(probe, vector)).collect())
+        .collect();
+    let all: Vec<f32> = per_probe.iter().flatten().copied().collect();
+    let (mean, pooled_variance) = mean_and_variance(&all);
+    let variance = match spread {
+        ProbeSpread::Pooled => pooled_variance,
+        ProbeSpread::WithinProbe => {
+            per_probe.iter().map(|scores| mean_and_variance(scores).1).sum::<f32>()
+                / per_probe.len() as f32
         }
-    }
-    let count = samples.len() as f32;
-    let mean = samples.iter().sum::<f32>() / count;
-    let variance = samples.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>() / count;
+    };
     let sigma = variance.sqrt();
 
     // The lower rail only guards against a degenerate sample: cross-modal
@@ -315,6 +344,13 @@ pub(crate) fn measure_band(probes: &[Vec<f32>], vectors: &[Vec<f32>]) -> Option<
     let floor = (mean + 2.75 * sigma).clamp(MIN_CALIBRATED_FLOOR, 0.80);
     let margin = (1.5 * sigma).clamp(0.02, 0.10);
     Some(ScoreCalibration { floor, margin, baseline: mean })
+}
+
+fn mean_and_variance(values: &[f32]) -> (f32, f32) {
+    let count = values.len() as f32;
+    let mean = values.iter().sum::<f32>() / count;
+    let variance = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / count;
+    (mean, variance)
 }
 
 /// Wire format of the embedding server.
@@ -1599,8 +1635,55 @@ mod tests {
                 vec![cos, (1.0 - cos * cos).sqrt()]
             })
             .collect();
-        let band = measure_band(&[probe], &vectors).unwrap();
+        let band = measure_band(&[probe], &vectors, ProbeSpread::Pooled).unwrap();
         assert!(band.floor < 0.35 && band.floor > band.baseline, "floor {} tracks the band", band.floor);
+    }
+
+    /// Unit vectors scoring 0.06-0.10 against probe x and 0.18-0.22 against
+    /// probe y: two probes at different levels, each with a narrow spread.
+    fn two_level_library() -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        let probes = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+        let vectors = (0..40)
+            .map(|i| {
+                let step = (i % 5) as f32 / 4.0;
+                let (x, y) = (0.06 + 0.04 * step, 0.18 + 0.04 * step);
+                vec![x, y, (1.0 - x * x - y * y).sqrt()]
+            })
+            .collect();
+        (probes, vectors)
+    }
+
+    #[test]
+    fn pooled_spread_keeps_the_previous_band() {
+        let (probes, vectors) = two_level_library();
+        let band = measure_band(&probes, &vectors, ProbeSpread::Pooled).unwrap();
+        let scores: Vec<f32> = probes
+            .iter()
+            .flat_map(|p| vectors.iter().map(|v| cosine_similarity(p, v)))
+            .collect();
+        let (mean, variance) = mean_and_variance(&scores);
+        assert!((band.baseline - mean).abs() < 1e-6);
+        assert!((band.floor - (mean + 2.75 * variance.sqrt())).abs() < 1e-6);
+        assert!((band.margin - (1.5 * variance.sqrt()).clamp(0.02, 0.10)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn within_probe_spread_ignores_the_gap_between_probes() {
+        let (probes, vectors) = two_level_library();
+        let pooled = measure_band(&probes, &vectors, ProbeSpread::Pooled).unwrap();
+        let within = measure_band(&probes, &vectors, ProbeSpread::WithinProbe).unwrap();
+        assert_eq!(within.baseline, pooled.baseline, "the baseline is the same mean");
+        // Each probe spreads by ~0.014; pooled sigma is ~0.06 from the gap.
+        assert!(within.floor < 0.20, "floor {} sits just above the band", within.floor);
+        assert!(pooled.floor > 0.28, "pooled floor {} counts the gap", pooled.floor);
+        assert!(within.margin < 0.03 && within.margin < pooled.margin, "margin {} follows the narrow spread", within.margin);
+
+        // With a single probe there is no gap, so both agree.
+        let one = &probes[..1];
+        assert_eq!(
+            measure_band(one, &vectors, ProbeSpread::Pooled),
+            measure_band(one, &vectors, ProbeSpread::WithinProbe)
+        );
     }
 
     #[test]
