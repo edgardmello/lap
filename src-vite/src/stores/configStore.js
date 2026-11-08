@@ -38,6 +38,8 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: 'mlx-community/embeddinggemma-2-bf16',
     dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
     translationModel: 'Qwen2.5-VL-3B-Instruct-4bit',
+    translationUrl: '',      // empty: the embedding server above
+    translationApiKey: '',
     scoreAdjustment: defaultScoreAdjustment(),
   },
   ollama: {
@@ -46,6 +48,8 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: 'embeddinggemma-2',
     dimensionsIndex: 0,
     translationModel: '',
+    translationUrl: '',      // empty: the embedding server above
+    translationApiKey: '',
     scoreAdjustment: defaultScoreAdjustment(),
   },
   openai: {
@@ -54,6 +58,8 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     model: '',
     dimensionsIndex: 0,
     translationModel: '',
+    translationUrl: '',      // empty: the embedding server above
+    translationApiKey: '',
     scoreAdjustment: defaultScoreAdjustment(),
   },
 };

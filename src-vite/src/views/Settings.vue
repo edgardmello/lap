@@ -426,6 +426,33 @@
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.translation_server') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_server_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="text"
+                  :placeholder="$t('settings.image_search.translation_server_placeholder')"
+                  v-model="serverConnection.translationUrl"
+                  @change="applyEmbeddingProvider"
+                />
+              </div>
+              <div v-if="serverConnection.translationUrl" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.translation_api_key') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_api_key_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="$t('settings.image_search.omlx_api_key')"
+                  v-model="serverConnection.translationApiKey"
+                  @change="applyEmbeddingProvider"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.translation_model') }}</div>
                   <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_model_hint') }}</div>
                 </div>
@@ -1658,7 +1685,13 @@ const serverModelHint = computed(() => {
 // Model pickers list what the server serves, using the URL and key as typed.
 const loadServerModels = () => listEmbeddingServerModels(serverProvider.value, serverConnection.value);
 const loadEmbeddingModels = async () => embeddingModelChoices(await loadServerModels());
-const loadChatModels = async () => chatModelChoices(await loadServerModels());
+// The translation picker asks the translation server when one is set.
+const loadChatModels = async () => {
+  const connection = serverConnection.value;
+  if (!connection.translationUrl) return chatModelChoices(await loadServerModels());
+  const translationServer = { ...connection, url: connection.translationUrl, apiKey: connection.translationApiKey };
+  return chatModelChoices(await listEmbeddingServerModels('openai', translationServer));
+};
 
 const modelListLabels = computed(() => ({
   show: t('settings.image_search.model_list_show'),

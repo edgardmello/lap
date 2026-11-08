@@ -1917,6 +1917,8 @@ function buildServerSettings(provider, connection) {
     model: connection?.model || defaults.model,
     dimensions,
     translationModel: connection?.translationModel || '',
+    translationUrl: connection?.translationUrl || '',
+    translationApiKey: connection?.translationApiKey || '',
     scoreAdjustment: scoreAdjustmentFor(connection),
   };
 }
