@@ -195,7 +195,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { isWin, isMac, isLinux, SCALE_VALUES } from '@/common/utils';
 import { matchesShortcut, ShortcutPlatform } from '@/common/shortcuts';
 import { SIDEBAR, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT, PANEL_ANIMATION_MS } from '@/common/constants';
-import { getAppConfig, getLibraryVisibleCounts, switchLibrary, cancelIndexing, cancelFaceIndex, setImageSearchProvider } from '@/common/api';
+import { getAppConfig, getLibraryVisibleCounts, switchLibrary, cancelIndexing, cancelFaceIndex, setImageSearchProvider, startLocalEmbedServer } from '@/common/api';
 
 // vue components
 import Library from '@/components/Library.vue';
@@ -478,6 +478,10 @@ async function finishStartup() {
   // so the bundled ONNX models are not loaded when a server is active. A
   // failed restore falls back to the built-in provider.
   const provider = config.settings.imageSearch?.provider;
+  const localServer = config.settings.imageSearch?.localServer;
+  if (provider && provider !== 'builtin' && localServer?.enabled) {
+    void startLocalEmbedServer(localServer).catch(console.error);
+  }
   if (provider && provider !== 'builtin') {
     await setImageSearchProvider(provider, config.settings.imageSearch[provider]).catch(console.error);
   }

@@ -69,6 +69,15 @@ export function embeddingServerDefaults(server) {
   return { ...EMBEDDING_SERVER_DEFAULTS[server], scoreAdjustment: defaultScoreAdjustment() };
 }
 
+// Local embedding server script that Lap starts and stops (e.g. the pplx
+// server); it needs a Python that already has the script's packages.
+export const LOCAL_SERVER_DEFAULTS = {
+  enabled: false,
+  python: '~/.venvs/pplx-embed/bin/python',
+  script: '~/Developer/lap/scripts/pplx_embed_server.py',
+  port: 8090,
+};
+
 export function isEmbeddingServer(provider) {
   return EMBEDDING_SERVERS.includes(provider);
 }
@@ -268,6 +277,7 @@ export const useConfigStore = defineStore('configStore', {
         omlx: embeddingServerDefaults('omlx'),
         ollama: embeddingServerDefaults('ollama'),
         openai: embeddingServerDefaults('openai'),
+        localServer: { ...LOCAL_SERVER_DEFAULTS },
       },
 
       // similar photos settings
@@ -506,9 +516,10 @@ export const useConfigStore = defineStore('configStore', {
     },
     // Provider and server connections chosen in the Settings window. The
     // strictness arrives in its own event, so it is not reset here.
-    syncImageSearchProvider({ provider, ...servers }) {
+    syncImageSearchProvider({ provider, localServer, ...servers }) {
       if (!this.settings.imageSearch) this.settings.imageSearch = { model: 0, thresholdIndex: 2 };
       const search = this.settings.imageSearch;
+      if (localServer) search.localServer = { ...LOCAL_SERVER_DEFAULTS, ...localServer };
       search.provider = isEmbeddingServer(provider) ? provider : 'builtin';
       for (const server of EMBEDDING_SERVERS) {
         if (servers[server]) search[server] = { ...embeddingServerDefaults(server), ...servers[server] };
@@ -566,6 +577,7 @@ export const useConfigStore = defineStore('configStore', {
             for (const server of EMBEDDING_SERVERS) {
               search[server] = { ...embeddingServerDefaults(server), ...search[server] };
             }
+            search.localServer = { ...LOCAL_SERVER_DEFAULTS, ...search.localServer };
           }
         }
         return state;
