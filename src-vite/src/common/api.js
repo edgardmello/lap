@@ -1917,6 +1917,8 @@ function buildServerSettings(provider, connection) {
     model: connection?.model || defaults.model,
     dimensions,
     translationModel: connection?.translationModel || '',
+    translationUrl: connection?.translationUrl || '',
+    translationApiKey: connection?.translationApiKey || '',
     scoreAdjustment: scoreAdjustmentFor(connection),
   };
 }
@@ -1944,6 +1946,33 @@ export async function testEmbeddingServerConnection(provider, connection) {
 // Models the embedding server serves; throws so the picker can show why.
 export async function listEmbeddingServerModels(provider, connection) {
   return await invoke('list_embed_server_models', { settings: buildServerSettings(provider, connection) });
+}
+
+// Local embedding server that Lap starts and stops.
+function localServerSettings(local) {
+  return {
+    enabled: !!local?.enabled,
+    python: local?.python || '',
+    script: local?.script || '',
+    port: Number(local?.port) || 8090,
+  };
+}
+
+export async function startLocalEmbedServer(local) {
+  return await invoke('start_local_embed_server', { settings: localServerSettings(local) });
+}
+
+export async function stopLocalEmbedServer() {
+  return await invoke('stop_local_embed_server');
+}
+
+export async function getLocalEmbedServerStatus() {
+  try {
+    return await invoke('get_local_embed_server_status');
+  } catch (error) {
+    console.error('getLocalEmbedServerStatus error:', error);
+    return null;
+  }
 }
 
 export async function startEmbeddingReindex() {

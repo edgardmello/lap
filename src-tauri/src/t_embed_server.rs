@@ -460,6 +460,12 @@ pub struct EmbeddingServerSettings {
     /// English before they are embedded; empty disables translation.
     #[serde(default)]
     pub translation_model: String,
+    /// Optional OpenAI-compatible server for the translation model, such as
+    /// oMLX next to an embedding-only server; empty uses this server.
+    #[serde(default)]
+    pub translation_url: String,
+    #[serde(default)]
+    pub translation_api_key: String,
     /// Manual tuning of the search score band; changes apply to the next
     /// search without a re-index or a new calibration.
     #[serde(default)]
@@ -488,6 +494,14 @@ impl EmbeddingServerSettings {
         settings.model = settings.model.trim().to_string();
         settings.api_key = settings.api_key.trim().to_string();
         settings.translation_model = settings.translation_model.trim().to_string();
+        settings.translation_url = settings.translation_url.trim().trim_end_matches('/').to_string();
+        settings.translation_api_key = settings.translation_api_key.trim().to_string();
+        if !settings.translation_url.is_empty()
+            && !settings.translation_url.starts_with("http://")
+            && !settings.translation_url.starts_with("https://")
+        {
+            return Err("The translation server URL must start with http:// or https://".to_string());
+        }
         settings.score_adjustment = settings.score_adjustment.sanitized();
         let label = settings.api.label();
         if !settings.url.starts_with("http://") && !settings.url.starts_with("https://") {
@@ -528,6 +542,20 @@ impl EmbeddingServerSettings {
             format!("{}{}", self.url, path)
         } else {
             format!("{}/v1{}", self.url, path)
+        }
+    }
+
+    /// Server that answers the translation model's chat requests: the
+    /// translation server when one is set, otherwise this server.
+    pub fn translation_server(&self) -> EmbeddingServerSettings {
+        if self.translation_url.is_empty() {
+            return self.clone();
+        }
+        EmbeddingServerSettings {
+            api: ServerApi::Openai,
+            url: self.translation_url.clone(),
+            api_key: self.translation_api_key.clone(),
+            ..self.clone()
         }
     }
 
@@ -1006,7 +1034,10 @@ pub fn embed_search_text(settings: &EmbeddingServerSettings, text: &str) -> Resu
 fn translate_search_text(settings: &EmbeddingServerSettings, text: &str) -> String {
     static CACHE: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = (settings.translation_model.clone(), text.trim().to_lowercase());
+    let key = (
+        format!("{}|{}", settings.translation_url, settings.translation_model),
+        text.trim().to_lowercase(),
+    );
     if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return hit;
     }
@@ -1043,7 +1074,8 @@ fn request_translation(settings: &EmbeddingServerSettings, text: &str) -> Option
             { "role": "user", "content": text },
         ],
     });
-    let request = settings.authorized(client.post(settings.openai_url("/chat/completions")).json(&body));
+    let server = settings.translation_server();
+    let request = server.authorized(client.post(server.openai_url("/chat/completions")).json(&body));
     let response: serde_json::Value = request
         .send()
         .ok()?
@@ -1656,6 +1688,26 @@ mod tests {
         assert!(handle.join().unwrap().starts_with("GET /api/tags "));
     }
 
+    #[test]
+    fn translation_uses_its_own_server_when_set() {
+        let (url, handle) = serve_once(r#"{"choices":[{"message":{"content":"trash"}}]}"#);
+        let settings = EmbeddingServerSettings {
+            translation_model: "Qwen3.5-2B-MLX-4bit".into(),
+            translation_url: format!("{}/v1/", url),
+            ..server(ServerApi::Openai, "http://127.0.0.1:9/v1")
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(settings.translation_url, format!("{}/v1", url));
+        assert_eq!(request_translation(&settings, "lixo").as_deref(), Some("trash"));
+        assert!(handle.join().unwrap().starts_with("POST /v1/chat/completions "));
+
+        let same = server(ServerApi::Ollama, "http://127.0.0.1:11434").translation_server();
+        assert_eq!((same.api, same.url.as_str()), (ServerApi::Ollama, "http://127.0.0.1:11434"));
+        let bad = EmbeddingServerSettings { translation_url: "127.0.0.1:8000".into(), ..settings };
+        assert!(bad.normalized().is_err());
+    }
+
     fn settings(model: &str, dimensions: Option<u32>) -> EmbeddingServerSettings {
         EmbeddingServerSettings {
             api: ServerApi::Omlx,
@@ -1664,6 +1716,8 @@ mod tests {
             model: model.into(),
             dimensions,
             translation_model: String::new(),
+            translation_url: String::new(),
+            translation_api_key: String::new(),
             score_adjustment: ScoreAdjustment::default(),
         }
     }

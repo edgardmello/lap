@@ -39,6 +39,7 @@ mod t_montage;
 mod t_tag_groups;
 mod t_motion_photo;
 mod t_embed_server;
+mod t_local_server;
 mod t_pasteboard;
 mod t_protocol;
 mod t_similar;
@@ -405,6 +406,9 @@ async fn main() {
             // oMLX embedding provider
             t_cmds::test_embed_server_connection,
             t_cmds::list_embed_server_models,
+            t_cmds::start_local_embed_server,
+            t_cmds::stop_local_embed_server,
+            t_cmds::get_local_embed_server_status,
             t_cmds::set_image_search_provider,
             t_cmds::start_embedding_reindex,
             t_cmds::cancel_embedding_reindex,
@@ -463,6 +467,7 @@ async fn main() {
                     }
                 }
                 tauri::RunEvent::Exit { .. } => {
+                    t_local_server::shutdown();
                     if aptabase_enabled {
                         let _ = app_handle.track_event("app_exited", None);
                         app_handle.flush_events_blocking();

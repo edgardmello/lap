@@ -374,6 +374,55 @@
             <template v-if="isServerProvider">
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.local_server') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.local_server_hint') }}</div>
+                </div>
+                <input type="checkbox" class="toggle toggle-primary toggle-sm" v-model="localServer.enabled" @change="onLocalServerToggle" />
+              </div>
+              <template v-if="localServer.enabled">
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.local_server_python') }}</div>
+                    <div class="text-xs text-base-content/30">{{ $t('settings.image_search.local_server_python_hint') }}</div>
+                  </div>
+                  <input class="input input-bordered input-sm w-56 shrink-0" type="text" spellcheck="false" v-model="localServer.python" />
+                </div>
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.local_server_script') }}</div>
+                  </div>
+                  <input class="input input-bordered input-sm w-56 shrink-0" type="text" spellcheck="false" v-model="localServer.script" />
+                </div>
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.local_server_port') }}</div>
+                  </div>
+                  <input class="input input-bordered input-sm w-28 shrink-0" type="number" min="1" max="65535" v-model.number="localServer.port" />
+                </div>
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div class="text-xs" :class="localServerStatus?.state === 'error' ? 'text-error' : 'text-base-content/70'">{{ localServerStatusText }}</div>
+                    <details v-if="localServerStatus?.log?.length" class="text-xs text-base-content/50">
+                      <summary class="cursor-pointer">{{ $t('settings.image_search.local_server_log') }}</summary>
+                      <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all">{{ localServerStatus.log.join('\n') }}</pre>
+                    </details>
+                  </div>
+                  <div class="flex gap-2 shrink-0">
+                    <button
+                      v-if="localServerActive"
+                      class="btn btn-outline btn-xs h-6 min-h-0"
+                      :disabled="localServerBusy"
+                      @click="onStopLocalServer"
+                    >{{ $t('settings.image_search.local_server_stop') }}</button>
+                    <button class="btn btn-outline btn-xs h-6 min-h-0" :disabled="localServerBusy" @click="onStartLocalServer">
+                      <span v-if="localServerBusy || localServerStatus?.state === 'starting'" class="loading loading-spinner loading-xs"></span>
+                      {{ localServerActive ? $t('settings.image_search.local_server_restart') : $t('settings.image_search.local_server_start') }}
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.omlx_server_url') }}</div>
                 </div>
                 <input
@@ -423,6 +472,33 @@
                 >
                   <option v-for="(option, index) in serverDimensionOptions" :key="index" :value="index">{{ option }}</option>
                 </select>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.translation_server') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_server_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="text"
+                  :placeholder="$t('settings.image_search.translation_server_placeholder')"
+                  v-model="serverConnection.translationUrl"
+                  @change="applyEmbeddingProvider"
+                />
+              </div>
+              <div v-if="serverConnection.translationUrl" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                  <div>{{ $t('settings.image_search.translation_api_key') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_api_key_hint') }}</div>
+                </div>
+                <input
+                  class="input input-bordered input-sm w-56 shrink-0"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="$t('settings.image_search.omlx_api_key')"
+                  v-model="serverConnection.translationApiKey"
+                  @change="applyEmbeddingProvider"
+                />
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
@@ -942,7 +1018,7 @@ import { emit } from '@tauri-apps/api/event';
 import { ask, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 import { config, libConfig } from '@/common/config';
-import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, defaultScoreAdjustment, embeddingServerDefaults, isEmbeddingServer } from '@/stores/configStore';
+import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, LOCAL_SERVER_DEFAULTS, defaultScoreAdjustment, embeddingServerDefaults, isEmbeddingServer } from '@/stores/configStore';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
 import { chatModelChoices, embeddingModelChoices } from '@/common/modelKinds';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
@@ -964,6 +1040,9 @@ import {
   setImageSearchProvider,
   testEmbeddingServerConnection,
   listEmbeddingServerModels,
+  startLocalEmbedServer,
+  stopLocalEmbedServer,
+  getLocalEmbedServerStatus,
   startEmbeddingReindex,
   cancelEmbeddingReindex,
   getEmbeddingReindexStatus,
@@ -1643,6 +1722,66 @@ const onScoreAdjustmentChange = async () => {
   await syncSearchCalibration(1);
 };
 
+// Local server script that Lap starts while it is open.
+const localServer = computed(() => {
+  const search = config.settings.imageSearch;
+  if (!search.localServer) search.localServer = { ...LOCAL_SERVER_DEFAULTS };
+  return search.localServer;
+});
+const localServerStatus = ref<any>(null);
+const localServerBusy = ref(false);
+let localServerTimer: ReturnType<typeof setTimeout> | null = null;
+
+const localServerActive = computed(() => ['starting', 'running'].includes(localServerStatus.value?.state));
+
+const localServerStatusText = computed(() => {
+  const status = localServerStatus.value;
+  if (!status) return '';
+  const label = t(`settings.image_search.local_server_state_${status.state}`, { url: status.url, pid: status.pid ?? '' });
+  return status.error ? `${label}: ${status.error}` : label;
+});
+
+// Poll while the server is loading, then once it settles.
+const syncLocalServerStatus = async () => {
+  if (localServerTimer) clearTimeout(localServerTimer);
+  localServerTimer = null;
+  localServerStatus.value = await getLocalEmbedServerStatus();
+  if (localServerStatus.value?.state === 'starting') {
+    localServerTimer = setTimeout(() => void syncLocalServerStatus(), 1500);
+  }
+};
+
+const onStartLocalServer = async () => {
+  localServerBusy.value = true;
+  try {
+    localServerStatus.value = await startLocalEmbedServer(localServer.value);
+  } catch (error) {
+    toast.error(error?.message || String(error));
+  } finally {
+    localServerBusy.value = false;
+  }
+  void syncLocalServerStatus();
+};
+
+const onStopLocalServer = async () => {
+  localServerBusy.value = true;
+  try {
+    localServerStatus.value = await stopLocalEmbedServer();
+  } catch (error) {
+    toast.error(error?.message || String(error));
+  } finally {
+    localServerBusy.value = false;
+  }
+};
+
+const onLocalServerToggle = async () => {
+  if (localServer.value.enabled) {
+    await onStartLocalServer();
+  } else if (localServerActive.value) {
+    await onStopLocalServer();
+  }
+};
+
 const serverModelPlaceholder = computed(() => {
   return serverProvider.value === 'openai'
     ? 'text-embedding-model'
@@ -1658,7 +1797,13 @@ const serverModelHint = computed(() => {
 // Model pickers list what the server serves, using the URL and key as typed.
 const loadServerModels = () => listEmbeddingServerModels(serverProvider.value, serverConnection.value);
 const loadEmbeddingModels = async () => embeddingModelChoices(await loadServerModels());
-const loadChatModels = async () => chatModelChoices(await loadServerModels());
+// The translation picker asks the translation server when one is set.
+const loadChatModels = async () => {
+  const connection = serverConnection.value;
+  if (!connection.translationUrl) return chatModelChoices(await loadServerModels());
+  const translationServer = { ...connection, url: connection.translationUrl, apiKey: connection.translationApiKey };
+  return chatModelChoices(await listEmbeddingServerModels('openai', translationServer));
+};
 
 const modelListLabels = computed(() => ({
   show: t('settings.image_search.model_list_show'),
@@ -1902,6 +2047,7 @@ onMounted(async () => {
   await syncEmbeddingReindexStatus();
   await syncEmbeddingCoverage();
   void syncSearchCalibration();
+  void syncLocalServerStatus();
   await syncImageSearchModelStatus();
   applyWindowScale(Number(config.settings.scale || 1));
   dbStorageDir.value = (await getDbStorageDir()) || '';
@@ -1933,6 +2079,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (localServerTimer) clearTimeout(localServerTimer);
   if (unlistenCloseRequested) {
     unlistenCloseRequested();
     unlistenCloseRequested = null;
@@ -2092,11 +2239,11 @@ watch(() => config.settings.imageSearch.thresholdIndex, (newValue) => {
 // provider and server connections too or its next save reverts them.
 watch(() => {
   const search = config.settings.imageSearch;
-  return [search.provider, ...EMBEDDING_SERVERS.map((server) => search[server])];
+  return [search.provider, search.localServer, ...EMBEDDING_SERVERS.map((server) => search[server])];
 }, () => {
   const search = config.settings.imageSearch;
   const servers = Object.fromEntries(EMBEDDING_SERVERS.map((server) => [server, search[server]]));
-  emit('settings-imageSearchProvider-changed', JSON.parse(JSON.stringify({ provider: search.provider, ...servers })));
+  emit('settings-imageSearchProvider-changed', JSON.parse(JSON.stringify({ provider: search.provider, localServer: search.localServer, ...servers })));
 }, { deep: true });
 watch(similarPhotoGroupingThresholdIndex, (newValue) => {
   emit('settings-similarPhotoGroupingThresholdIndex-changed', newValue);

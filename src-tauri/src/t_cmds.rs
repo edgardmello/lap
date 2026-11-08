@@ -9,6 +9,7 @@ use crate::t_face;
 use crate::t_image;
 use crate::t_montage;
 use crate::t_embed_server;
+use crate::t_local_server;
 use crate::t_apple_sidecar::{
     apple_aae_sidecar_paths, build_apple_sidecar_rename_plan,
     collect_original_rename_db_names, collect_replaced_file_ids_for_targets,
@@ -3423,6 +3424,32 @@ pub async fn list_embed_server_models(
     tauri::async_runtime::spawn_blocking(move || t_embed_server::list_models(&settings))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// start the local embedding server script (or keep the running one)
+#[tauri::command]
+pub async fn start_local_embed_server(
+    settings: t_local_server::LocalServerSettings,
+) -> Result<t_local_server::LocalServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || t_local_server::start(settings))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// stop the local embedding server Lap started
+#[tauri::command]
+pub async fn stop_local_embed_server() -> Result<t_local_server::LocalServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(t_local_server::stop)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// state and recent output of the local embedding server
+#[tauri::command]
+pub async fn get_local_embed_server_status() -> Result<t_local_server::LocalServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(t_local_server::status)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// switch the embedding provider between the built-in engine and a server
