@@ -3415,6 +3415,16 @@ pub async fn test_embed_server_connection(
         .map_err(|e| e.to_string())
 }
 
+/// list the models the embedding server serves, for the model pickers
+#[tauri::command]
+pub async fn list_embed_server_models(
+    settings: t_embed_server::EmbeddingServerSettings,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || t_embed_server::list_models(&settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// switch the embedding provider between the built-in engine and a server
 #[tauri::command]
 pub fn set_image_search_provider(

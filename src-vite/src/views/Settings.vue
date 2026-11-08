@@ -403,11 +403,11 @@
                   <div>{{ $t('settings.image_search.omlx_model') }}</div>
                   <div class="text-xs text-base-content/30">{{ serverModelHint }}</div>
                 </div>
-                <input
-                  class="input input-bordered input-sm w-56 shrink-0"
-                  type="text"
-                  :placeholder="serverModelPlaceholder"
+                <ModelCombobox
                   v-model="serverConnection.model"
+                  :placeholder="serverModelPlaceholder"
+                  :load-models="loadServerModels"
+                  :labels="modelListLabels"
                   @change="applyEmbeddingProvider"
                 />
               </div>
@@ -429,11 +429,11 @@
                   <div>{{ $t('settings.image_search.translation_model') }}</div>
                   <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_model_hint') }}</div>
                 </div>
-                <input
-                  class="input input-bordered input-sm w-56 shrink-0"
-                  type="text"
-                  :placeholder="$t('settings.image_search.translation_model_placeholder')"
+                <ModelCombobox
                   v-model="serverConnection.translationModel"
+                  :placeholder="$t('settings.image_search.translation_model_placeholder')"
+                  :load-models="loadServerModels"
+                  :labels="modelListLabels"
                   @change="applyEmbeddingProvider"
                 />
               </div>
@@ -962,6 +962,7 @@ import {
   listenImageSearchModelDownloadProgress,
   setImageSearchProvider,
   testEmbeddingServerConnection,
+  listEmbeddingServerModels,
   startEmbeddingReindex,
   cancelEmbeddingReindex,
   getEmbeddingReindexStatus,
@@ -981,6 +982,7 @@ import ModalDialog from '@/components/ModalDialog.vue';
 import BackupDialog from '@/components/BackupDialog.vue';
 import RestoreDialog from '@/components/RestoreDialog.vue';
 import TButton from '@/components/TButton.vue';
+import ModelCombobox from '@/components/ModelCombobox.vue';
 
 /// i18n
 const { locale, messages, t } = useI18n();
@@ -1651,6 +1653,17 @@ const serverModelHint = computed(() => {
     ? localeMsg.value.settings.image_search.omlx_model_hint
     : localeMsg.value.settings.image_search.server_model_hint;
 });
+
+// Model pickers list what the server serves, using the URL and key as typed.
+const loadServerModels = () => listEmbeddingServerModels(serverProvider.value, serverConnection.value);
+
+const modelListLabels = computed(() => ({
+  show: t('settings.image_search.model_list_show'),
+  loading: t('settings.image_search.model_list_loading'),
+  empty: t('settings.image_search.model_list_empty'),
+  noMatch: t('settings.image_search.model_list_no_match'),
+  failed: t('settings.image_search.model_list_failed'),
+}));
 
 const serverDimensionOptions = computed(() => {
   return localeMsg.value.settings.image_search.omlx_dimensions_options || ['Full', '512', '256', '128'];

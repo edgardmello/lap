@@ -718,6 +718,38 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
     }
 }
 
+/// Models the server currently serves, for the model pickers in Settings.
+/// Only the URL and API key matter here, so an empty or not-yet-valid model
+/// name does not block the listing.
+pub fn list_models(settings: &EmbeddingServerSettings) -> Result<Vec<String>, String> {
+    let settings = EmbeddingServerSettings {
+        model: DEFAULT_MODEL.to_string(),
+        dimensions: None,
+        ..settings.clone()
+    }
+    .normalized()?;
+    let client = http_client(HEALTH_TIMEOUT)?;
+    let url = match settings.api {
+        ServerApi::Ollama => format!("{}/api/tags", settings.url),
+        ServerApi::Omlx | ServerApi::Openai => settings.openai_url("/models"),
+    };
+    let response = settings
+        .authorized(client.get(url))
+        .send()
+        .map_err(|error| request_error(settings.api, &error))?;
+    let status = response.status();
+    let body = response.text().unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Server responded with {}: {}", status.as_u16(), truncate(body.trim(), 300)));
+    }
+    let value = serde_json::from_str::<serde_json::Value>(&body)
+        .map_err(|error| format!("The server's model list is not valid JSON: {}", error))?;
+    let mut models = parse_model_list(settings.api, &value);
+    models.sort_by_key(|id| id.to_lowercase());
+    models.dedup();
+    Ok(models)
+}
+
 /// Readable message for a request that got no response.
 fn request_error(api: ServerApi, error: &reqwest::Error) -> String {
     // "embedding server" already ends in "server"; don't say it twice.
@@ -1583,6 +1615,45 @@ mod tests {
         let openai = request_error(ServerApi::Openai, &error);
         assert!(openai.starts_with("Cannot reach the embedding server;"), "{}", openai);
         assert!(request_error(ServerApi::Ollama, &error).starts_with("Cannot reach the Ollama server;"));
+    }
+
+    /// Answers one HTTP request with `body` and returns the request line.
+    fn serve_once(body: &'static str) -> (String, std::thread::JoinHandle<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 2 {
+                line.clear();
+            }
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            request_line
+        });
+        (url, handle)
+    }
+
+    #[test]
+    fn list_models_works_without_a_model_name() {
+        let (url, handle) = serve_once(r#"{"data":[{"id":"qwen"},{"id":"embeddinggemma-2-8bit"},{"id":"qwen"}]}"#);
+        let settings = EmbeddingServerSettings { model: String::new(), ..server(ServerApi::Openai, &format!("{}/v1/", url)) };
+        assert_eq!(list_models(&settings).unwrap(), vec!["embeddinggemma-2-8bit", "qwen"]);
+        assert!(handle.join().unwrap().starts_with("GET /v1/models "));
+
+        let (url, handle) = serve_once(r#"{"models":[{"name":"embeddinggemma-2:latest"}]}"#);
+        let settings = server(ServerApi::Ollama, &format!("{}/v1", url));
+        assert_eq!(list_models(&settings).unwrap(), vec!["embeddinggemma-2:latest"]);
+        assert!(handle.join().unwrap().starts_with("GET /api/tags "));
     }
 
     fn settings(model: &str, dimensions: Option<u32>) -> EmbeddingServerSettings {
