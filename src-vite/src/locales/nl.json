@@ -1552,6 +1552,7 @@
       "model_list_empty": "De server toont geen modellen; typ de naam",
       "model_list_no_match": "Geen vermeld model komt overeen; het wordt gebruikt zoals getypt",
       "model_list_failed": "Kan modellen niet ophalen",
+      "model_list_no_chat": "De server toont geen chatmodellen, alleen embeddingmodellen; typ de naam van een bereikbaar chatmodel",
       "reindex_embeddings": "Foto-embeddings opnieuw indexeren",
       "reindex_embeddings_hint": "Eenmalig nodig na het wisselen van provider of model",
       "reindex_start": "Opnieuw indexeren",

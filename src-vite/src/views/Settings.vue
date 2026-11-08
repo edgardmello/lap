@@ -406,7 +406,7 @@
                 <ModelCombobox
                   v-model="serverConnection.model"
                   :placeholder="serverModelPlaceholder"
-                  :load-models="loadServerModels"
+                  :load-models="loadEmbeddingModels"
                   :labels="modelListLabels"
                   @change="applyEmbeddingProvider"
                 />
@@ -432,8 +432,8 @@
                 <ModelCombobox
                   v-model="serverConnection.translationModel"
                   :placeholder="$t('settings.image_search.translation_model_placeholder')"
-                  :load-models="loadServerModels"
-                  :labels="modelListLabels"
+                  :load-models="loadChatModels"
+                  :labels="chatModelListLabels"
                   @change="applyEmbeddingProvider"
                 />
               </div>
@@ -944,6 +944,7 @@ import { useI18n } from 'vue-i18n';
 import { config, libConfig } from '@/common/config';
 import { EMBEDDING_SERVERS, EMBEDDING_SERVER_DEFAULTS, defaultScoreAdjustment, embeddingServerDefaults, isEmbeddingServer } from '@/stores/configStore';
 import { normalizeThumbnailSize } from '@/common/thumbnailProfiles';
+import { chatModelChoices, embeddingModelChoices } from '@/common/modelKinds';
 import { THUMBNAIL_BADGE, MAP_MARKER_SIZES, SETTINGS_TAB, SETTINGS_BASE_WIDTH, SETTINGS_BASE_HEIGHT } from '@/common/constants';
 import {
   getThumbnailCacheLocation,
@@ -1656,6 +1657,8 @@ const serverModelHint = computed(() => {
 
 // Model pickers list what the server serves, using the URL and key as typed.
 const loadServerModels = () => listEmbeddingServerModels(serverProvider.value, serverConnection.value);
+const loadEmbeddingModels = async () => embeddingModelChoices(await loadServerModels());
+const loadChatModels = async () => chatModelChoices(await loadServerModels());
 
 const modelListLabels = computed(() => ({
   show: t('settings.image_search.model_list_show'),
@@ -1663,6 +1666,11 @@ const modelListLabels = computed(() => ({
   empty: t('settings.image_search.model_list_empty'),
   noMatch: t('settings.image_search.model_list_no_match'),
   failed: t('settings.image_search.model_list_failed'),
+}));
+
+const chatModelListLabels = computed(() => ({
+  ...modelListLabels.value,
+  empty: t('settings.image_search.model_list_no_chat'),
 }));
 
 const serverDimensionOptions = computed(() => {

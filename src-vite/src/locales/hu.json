@@ -1552,6 +1552,7 @@
       "model_list_empty": "A szerver nem listáz modelleket; írja be a nevet",
       "model_list_no_match": "Egyik listázott modell sem egyezik; a beírt név lesz használva",
       "model_list_failed": "Nem sikerült lekérni a modelleket",
+      "model_list_no_chat": "A szerver nem listáz chatmodelleket, csak beágyazási modelleket; írja be egy elérhető chatmodell nevét",
       "reindex_embeddings": "Fotó-beágyazások újraindexelése",
       "reindex_embeddings_hint": "Szolgáltató vagy modell váltása után egyszer szükséges",
       "reindex_start": "Újraindexelés",

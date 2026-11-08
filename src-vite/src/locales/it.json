@@ -1552,6 +1552,7 @@
       "model_list_empty": "Il server non elenca modelli; digita il nome",
       "model_list_no_match": "Nessun modello elencato corrisponde; verrà usato come digitato",
       "model_list_failed": "Impossibile elencare i modelli",
+      "model_list_no_chat": "Il server non elenca modelli di chat, solo di embedding; digita il nome di un modello di chat raggiungibile",
       "reindex_embeddings": "Reindicizza gli embedding delle foto",
       "reindex_embeddings_hint": "Necessario una volta dopo il cambio di provider o modello",
       "reindex_start": "Reindicizza",
