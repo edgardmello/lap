@@ -720,14 +720,18 @@ pub fn test_connection(settings: &EmbeddingServerSettings) -> ServerConnectionSt
 
 /// Readable message for a request that got no response.
 fn request_error(api: ServerApi, error: &reqwest::Error) -> String {
+    // "embedding server" already ends in "server"; don't say it twice.
+    let server = match api.label() {
+        label if label.ends_with("server") => label.to_string(),
+        label => format!("{} server", label),
+    };
     if error.is_timeout() {
         format!(
-            "The {} server did not answer in time; the model may still be loading, try again in a moment ({})",
-            api.label(),
-            error
+            "The {} did not answer in time; the model may still be loading, try again in a moment ({})",
+            server, error
         )
     } else if error.is_connect() {
-        format!("Cannot reach the {} server; is it running at this URL? ({})", api.label(), error)
+        format!("Cannot reach the {}; is it running at this URL? ({})", server, error)
     } else {
         format!("{} request failed: {}", api.label(), error)
     }
@@ -1570,6 +1574,16 @@ pub fn is_server_decodable_image(bytes: &[u8]) -> bool {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[test]
+    fn connect_error_names_each_server_once() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let client = http_client(Duration::from_secs(2)).unwrap();
+        let error = client.get(format!("http://127.0.0.1:{}/v1/models", port)).send().unwrap_err();
+        let openai = request_error(ServerApi::Openai, &error);
+        assert!(openai.starts_with("Cannot reach the embedding server;"), "{}", openai);
+        assert!(request_error(ServerApi::Ollama, &error).starts_with("Cannot reach the Ollama server;"));
+    }
 
     fn settings(model: &str, dimensions: Option<u32>) -> EmbeddingServerSettings {
         EmbeddingServerSettings {
