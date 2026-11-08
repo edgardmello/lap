@@ -404,6 +404,7 @@ async fn main() {
             t_cmds::cancel_multilingual_image_search_model_download,
             // oMLX embedding provider
             t_cmds::test_embed_server_connection,
+            t_cmds::list_embed_server_models,
             t_cmds::set_image_search_provider,
             t_cmds::start_embedding_reindex,
             t_cmds::cancel_embedding_reindex,

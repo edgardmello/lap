@@ -1941,6 +1941,11 @@ export async function testEmbeddingServerConnection(provider, connection) {
   }
 }
 
+// Models the embedding server serves; throws so the picker can show why.
+export async function listEmbeddingServerModels(provider, connection) {
+  return await invoke('list_embed_server_models', { settings: buildServerSettings(provider, connection) });
+}
+
 export async function startEmbeddingReindex() {
   try {
     return await invoke('start_embedding_reindex', { libraryId: libConfig._libraryId });
