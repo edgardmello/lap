@@ -11,6 +11,17 @@ uses:
 
     GET  /v1/models       -> {"data": [{"id": "<model>"}]}
     POST /v1/embeddings   -> {"input": ["text", {"image": "data:image/jpeg;base64,..."}]}
+    POST /v1/chat/completions -> forwarded to --chat-upstream (optional)
+
+The model aligns English text with photos better than Portuguese or other
+languages. Lap's "Search translation model" setting fixes that by asking the
+same server to translate each search into English first. This server has no
+chat model of its own, so start it with --chat-upstream pointing at a local
+chat server (oMLX, Ollama, LM Studio) and set Lap's translation model to a
+model that server serves:
+
+    python scripts/pplx_embed_server.py \
+        --chat-upstream http://127.0.0.1:11434/v1      # Ollama
 
 Lap only sends two kinds of inputs: search queries (text) and photos
 (images). Text is therefore embedded with `encode_queries` (the model adds its
@@ -41,10 +52,13 @@ import base64
 import binascii
 import io
 import json
+import os
 import sys
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_MODEL = "perplexity-ai/pplx-embed-v2-context-0.6b"
@@ -200,7 +214,37 @@ def split_inputs(raw) -> list[tuple[str, object]]:
     return items
 
 
-def make_handler(embedder: Embedder):
+def forward_chat(upstream: str, api_key: str, raw: bytes) -> tuple[int, bytes]:
+    """POST a chat-completions body to the upstream server; return (status, body)."""
+    request = urllib.request.Request(
+        upstream.rstrip("/") + "/chat/completions", raw, {"Content-Type": "application/json"}
+    )
+    if api_key:
+        request.add_header("Authorization", f"Bearer {api_key}")
+    # Local upstreams must not go through a system HTTP proxy.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=120) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
+
+
+def upstream_models(upstream: str, api_key: str) -> list[dict]:
+    """The upstream's model list, so its chat models show up next to pplx."""
+    request = urllib.request.Request(upstream.rstrip("/") + "/models")
+    if api_key:
+        request.add_header("Authorization", f"Bearer {api_key}")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=5) as response:
+            data = json.load(response).get("data") or []
+        return [entry for entry in data if isinstance(entry, dict) and entry.get("id")]
+    except (OSError, ValueError, urllib.error.URLError):
+        return []
+
+
+def make_handler(embedder: Embedder, chat_upstream: str = "", chat_api_key: str = ""):
     class Handler(BaseHTTPRequestHandler):
         server_version = "pplx-embed-server/1.0"
 
@@ -225,16 +269,37 @@ def make_handler(embedder: Embedder):
         def do_GET(self):
             route = self.route()
             if route == "/models":
-                self.send_json(200, {
-                    "object": "list",
-                    "data": [{"id": embedder.model_name, "object": "model", "owned_by": "local"}],
-                })
+                models = [{"id": embedder.model_name, "object": "model", "owned_by": "local"}]
+                if chat_upstream:
+                    models += upstream_models(chat_upstream, chat_api_key)
+                self.send_json(200, {"object": "list", "data": models})
             elif route in ("", "/health"):
                 self.send_json(200, {"status": "ok", "model": embedder.model_name, "device": embedder.device})
             else:
                 self.send_error_json(404, f"unknown path {self.path}")
 
+        def relay_chat(self):
+            if not chat_upstream:
+                self.send_error_json(404, "chat completions are not served here; start the server "
+                                          "with --chat-upstream <url> to enable search translation")
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length)
+            try:
+                status, data = forward_chat(chat_upstream, chat_api_key, raw)
+            except (OSError, urllib.error.URLError) as error:
+                self.send_error_json(502, f"chat upstream {chat_upstream} unreachable: {error}")
+                return
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_POST(self):
+            if self.route() == "/chat/completions":
+                self.relay_chat()
+                return
             if self.route() != "/embeddings":
                 self.send_error_json(404, f"unknown path {self.path}")
                 return
@@ -299,11 +364,18 @@ def main():
     parser.add_argument("--min-pixels", type=int, default=16384)
     parser.add_argument("--max-pixels", type=int, default=1800000,
                         help="larger images are downscaled to at most this many pixels")
+    parser.add_argument("--chat-upstream", default="",
+                        help="OpenAI-compatible chat server for search translation, "
+                             "e.g. http://127.0.0.1:11434/v1 (Ollama) or http://127.0.0.1:8000/v1 (oMLX)")
+    parser.add_argument("--chat-api-key", default=os.environ.get("PPLX_CHAT_API_KEY", ""),
+                        help="API key for --chat-upstream (default: $PPLX_CHAT_API_KEY)")
     args = parser.parse_args()
 
     embedder = Embedder(args)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(embedder))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(embedder, args.chat_upstream, args.chat_api_key))
     print(f"Serving {args.model} at http://{args.host}:{args.port}/v1", flush=True)
+    if args.chat_upstream:
+        print(f"Forwarding /v1/chat/completions to {args.chat_upstream}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
