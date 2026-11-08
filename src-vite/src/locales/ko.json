@@ -1552,6 +1552,7 @@
       "model_list_empty": "서버가 모델 목록을 제공하지 않습니다. 이름을 입력하세요",
       "model_list_no_match": "일치하는 모델이 없습니다. 입력한 이름 그대로 사용됩니다",
       "model_list_failed": "모델 목록을 가져올 수 없습니다",
+      "model_list_no_chat": "서버가 채팅 모델 없이 임베딩 모델만 제공합니다. 사용할 수 있는 채팅 모델 이름을 입력하세요",
       "reindex_embeddings": "사진 임베딩 재인덱싱",
       "reindex_embeddings_hint": "공급자 또는 모델 전환 후 한 번 필요합니다",
       "reindex_start": "재인덱싱",

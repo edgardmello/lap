@@ -1552,6 +1552,7 @@
       "model_list_empty": "O servidor não lista modelos; digite o nome",
       "model_list_no_match": "Nenhum modelo listado corresponde; será usado como digitado",
       "model_list_failed": "Não foi possível listar os modelos",
+      "model_list_no_chat": "O servidor não lista modelos de chat, só de embedding; digite o nome de um modelo de chat que ele alcance",
       "score_floor": "Filtro de resultados",
       "score_floor_hint": "Automático usa a faixa de pontuação medida para esta biblioteca. Ajuste se as buscas mostrarem fotos de menos ou de mais; vale a partir da próxima busca",
       "score_mode_auto": "Automático",

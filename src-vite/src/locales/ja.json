@@ -1552,6 +1552,7 @@
       "model_list_empty": "サーバーはモデルを一覧表示しません。名前を入力してください",
       "model_list_no_match": "一致するモデルがありません。入力したとおりに使用されます",
       "model_list_failed": "モデルの一覧を取得できませんでした",
+      "model_list_no_chat": "サーバーはチャットモデルを一覧表示せず、埋め込みモデルのみです。利用できるチャットモデル名を入力してください",
       "reindex_embeddings": "写真エンベディングを再インデックス",
       "reindex_embeddings_hint": "プロバイダーまたはモデルの切り替え後に一度必要です",
       "reindex_start": "再インデックス",

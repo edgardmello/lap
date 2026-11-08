@@ -1552,6 +1552,7 @@
       "model_list_empty": "Serwer nie udostępnia listy modeli; wpisz nazwę",
       "model_list_no_match": "Żaden model z listy nie pasuje; zostanie użyta wpisana nazwa",
       "model_list_failed": "Nie udało się pobrać listy modeli",
+      "model_list_no_chat": "Serwer nie udostępnia modeli czatu, tylko modele embeddingów; wpisz nazwę dostępnego modelu czatu",
       "reindex_embeddings": "Ponownie indeksuj osadzenia zdjęć",
       "reindex_embeddings_hint": "Wymagane raz po zmianie dostawcy lub modelu",
       "reindex_start": "Ponowna indeksacja",

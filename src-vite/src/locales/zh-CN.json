@@ -1552,6 +1552,7 @@
       "model_list_empty": "服务器未列出模型；请输入名称",
       "model_list_no_match": "没有匹配的模型；将按输入内容使用",
       "model_list_failed": "无法列出模型",
+      "model_list_no_chat": "服务器只列出嵌入模型，没有聊天模型；请输入可用的聊天模型名称",
       "reindex_embeddings": "重新索引照片嵌入",
       "reindex_embeddings_hint": "切换提供方或模型后需要执行一次",
       "reindex_start": "重新索引",
