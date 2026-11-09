@@ -1065,29 +1065,50 @@ fn request_translation(settings: &EmbeddingServerSettings, text: &str) -> Option
         return None;
     }
     let client = http_client(QUERY_TRANSLATION_TIMEOUT).ok()?;
-    let body = json!({
+    let mut body = json!({
         "model": settings.translation_model,
         "temperature": 0,
         "max_tokens": 24,
+        // Reasoning models (Qwen3, Qwen3.5) otherwise spend the whole token
+        // budget on "Thinking Process: ..." before any answer.
+        "chat_template_kwargs": { "enable_thinking": false },
         "messages": [
             { "role": "system", "content": QUERY_TRANSLATION_PROMPT },
             { "role": "user", "content": text },
         ],
     });
     let server = settings.translation_server();
-    let request = server.authorized(client.post(server.openai_url("/chat/completions")).json(&body));
-    let response: serde_json::Value = request
-        .send()
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .json()
-        .ok()?;
-    let english = response["choices"][0]["message"]["content"]
-        .as_str()?
-        .trim()
-        .trim_matches(|c| c == '"' || c == '\'')
-        .trim();
+    let send = |body: &serde_json::Value| {
+        server
+            .authorized(client.post(server.openai_url("/chat/completions")).json(body))
+            .send()
+            .ok()
+    };
+    let mut response = send(&body)?;
+    // Strict servers (OpenAI itself) reject the template option.
+    if response.status() == reqwest::StatusCode::BAD_REQUEST {
+        body.as_object_mut()?.remove("chat_template_kwargs");
+        response = send(&body)?;
+    }
+    let response: serde_json::Value = response.error_for_status().ok()?.json().ok()?;
+    translation_from_response(&response)
+}
+
+/// The English terms in a chat completion, or None when the model was cut
+/// off (it was still thinking) or answered with nothing usable.
+fn translation_from_response(response: &serde_json::Value) -> Option<String> {
+    let choice = &response["choices"][0];
+    if choice["finish_reason"].as_str() == Some("length") {
+        return None;
+    }
+    let mut content = choice["message"]["content"].as_str()?.trim();
+    if let Some(end) = content.find("</think>") {
+        content = content[end + "</think>".len()..].trim();
+    }
+    if content.starts_with("<think>") {
+        return None;
+    }
+    let english = content.trim_matches(|c| c == '"' || c == '\'').trim();
     (!english.is_empty() && english.chars().count() <= QUERY_TRANSLATION_MAX_CHARS)
         .then(|| english.to_string())
 }
@@ -1686,6 +1707,21 @@ mod tests {
         let settings = server(ServerApi::Ollama, &format!("{}/v1", url));
         assert_eq!(list_models(&settings).unwrap(), vec!["embeddinggemma-2:latest"]);
         assert!(handle.join().unwrap().starts_with("GET /api/tags "));
+    }
+
+    #[test]
+    fn translation_skips_thinking_and_cut_off_replies() {
+        let reply = |content: &str, finish: &str| {
+            json!({ "choices": [{ "message": { "content": content }, "finish_reason": finish }] })
+        };
+        assert_eq!(translation_from_response(&reply(" \"trash\" ", "stop")).as_deref(), Some("trash"));
+        assert_eq!(
+            translation_from_response(&reply("<think>\nlixo is Portuguese\n</think>\n\ntrash", "stop")).as_deref(),
+            Some("trash")
+        );
+        assert_eq!(translation_from_response(&reply("Thinking Process:\n\n1. **Analyze", "length")), None);
+        assert_eq!(translation_from_response(&reply("<think>\nlixo means", "stop")), None);
+        assert_eq!(translation_from_response(&reply("  ", "stop")), None);
     }
 
     #[test]
