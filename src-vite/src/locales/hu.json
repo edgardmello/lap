@@ -1544,6 +1544,8 @@
       "test_model_missing": "Kapcsolódva, de a kiszolgáló nem kínálja ezt a modellt",
       "test_images_unsupported": "Kapcsolódva, de a modell nem fogad el képeket",
       "server_model_hint": "A modell neve, ahogy a szerver kínálja; a modellnek képeket is el kell fogadnia, pl. embeddinggemma-2",
+      "translation_enabled": "Keresések fordítása",
+      "translation_enabled_hint": "Egy chatmodell minden keresést angolra fordít a beágyazás előtt; minden kereséshez egy chatkérést ad",
       "translation_model": "Keresésfordító modell",
       "translation_model_hint": "Opcionális csevegőmodell ugyanazon a szerveren, amely a kereséseket előbb angolra fordítja",
       "translation_model_placeholder": "Üres: keresés a beírt módon",

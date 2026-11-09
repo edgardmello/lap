@@ -1544,6 +1544,8 @@
       "test_model_missing": "已连接，但该服务器未提供此模型",
       "test_images_unsupported": "已连接，但该模型不支持图像",
       "server_model_hint": "服务器提供的模型名称；模型必须支持图像，例如 embeddinggemma-2",
+      "translation_enabled": "翻译搜索",
+      "translation_enabled_hint": "在嵌入前让聊天模型将每次搜索翻译成英文；每次搜索会多一次聊天请求",
       "translation_model": "搜索翻译模型",
       "translation_model_hint": "可选：同一服务器上的聊天模型，先将搜索词翻译成英文",
       "translation_model_placeholder": "留空：按输入内容搜索",

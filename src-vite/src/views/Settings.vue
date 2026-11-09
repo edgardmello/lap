@@ -475,44 +475,53 @@
               </div>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.translation_server') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_server_hint') }}</div>
+                  <div>{{ $t('settings.image_search.translation_enabled') }}</div>
+                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_enabled_hint') }}</div>
                 </div>
-                <input
-                  class="input input-bordered input-sm w-56 shrink-0"
-                  type="text"
-                  :placeholder="$t('settings.image_search.translation_server_placeholder')"
-                  v-model="serverConnection.translationUrl"
-                  @change="applyEmbeddingProvider"
-                />
+                <input type="checkbox" class="toggle toggle-primary toggle-sm" v-model="serverConnection.translationEnabled" @change="applyEmbeddingProvider" />
               </div>
-              <div v-if="serverConnection.translationUrl" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.translation_api_key') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_api_key_hint') }}</div>
+              <template v-if="serverConnection.translationEnabled">
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.translation_server') }}</div>
+                    <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_server_hint') }}</div>
+                  </div>
+                  <input
+                    class="input input-bordered input-sm w-56 shrink-0"
+                    type="text"
+                    :placeholder="$t('settings.image_search.translation_server_placeholder')"
+                    v-model="serverConnection.translationUrl"
+                    @change="applyEmbeddingProvider"
+                  />
                 </div>
-                <input
-                  class="input input-bordered input-sm w-56 shrink-0"
-                  type="password"
-                  autocomplete="off"
-                  :placeholder="$t('settings.image_search.omlx_api_key')"
-                  v-model="serverConnection.translationApiKey"
-                  @change="applyEmbeddingProvider"
-                />
-              </div>
-              <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
-                <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
-                  <div>{{ $t('settings.image_search.translation_model') }}</div>
-                  <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_model_hint') }}</div>
+                <div v-if="serverConnection.translationUrl" class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.translation_api_key') }}</div>
+                    <div class="text-xs text-base-content/30">{{ $t('settings.image_search.omlx_api_key_hint') }}</div>
+                  </div>
+                  <input
+                    class="input input-bordered input-sm w-56 shrink-0"
+                    type="password"
+                    autocomplete="off"
+                    :placeholder="$t('settings.image_search.omlx_api_key')"
+                    v-model="serverConnection.translationApiKey"
+                    @change="applyEmbeddingProvider"
+                  />
                 </div>
-                <ModelCombobox
-                  v-model="serverConnection.translationModel"
-                  :placeholder="$t('settings.image_search.translation_model_placeholder')"
-                  :load-models="loadChatModels"
-                  :labels="chatModelListLabels"
-                  @change="applyEmbeddingProvider"
-                />
-              </div>
+                <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+                  <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                    <div>{{ $t('settings.image_search.translation_model') }}</div>
+                    <div class="text-xs text-base-content/30">{{ $t('settings.image_search.translation_model_hint') }}</div>
+                  </div>
+                  <ModelCombobox
+                    v-model="serverConnection.translationModel"
+                    :placeholder="$t('settings.image_search.translation_model_placeholder')"
+                    :load-models="loadChatModels"
+                    :labels="chatModelListLabels"
+                    @change="applyEmbeddingProvider"
+                  />
+                </div>
+              </template>
               <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
                 <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                   <div>{{ $t('settings.image_search.score_floor') }}</div>

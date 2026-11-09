@@ -1544,6 +1544,8 @@
       "test_model_missing": "Conectado, pero este servidor no ofrece el modelo",
       "test_images_unsupported": "Conectado, pero el modelo no acepta imágenes",
       "server_model_hint": "Nombre del modelo tal como lo sirve el servidor; debe aceptar imágenes, p. ej. embeddinggemma-2",
+      "translation_enabled": "Traducir búsquedas",
+      "translation_enabled_hint": "Pide a un modelo de chat que traduzca cada búsqueda al inglés antes del embedding; añade una solicitud de chat a cada búsqueda",
       "translation_model": "Modelo de traducción de búsqueda",
       "translation_model_hint": "Modelo de chat opcional en el mismo servidor que traduce primero las búsquedas al inglés",
       "translation_model_placeholder": "Vacío: buscar tal como se escribe",

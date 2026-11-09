@@ -37,6 +37,7 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     apiKey: '',
     model: 'mlx-community/embeddinggemma-2-bf16',
     dimensionsIndex: 0,      // 0: full, 1: 512, 2: 256, 3: 128 (Matryoshka)
+    translationEnabled: false, // off: searches are embedded as typed, with no chat call
     translationModel: 'Qwen2.5-VL-3B-Instruct-4bit',
     translationUrl: '',      // empty: the embedding server above
     translationApiKey: '',
@@ -47,6 +48,7 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     apiKey: '',
     model: 'embeddinggemma-2',
     dimensionsIndex: 0,
+    translationEnabled: false, // off: searches are embedded as typed, with no chat call
     translationModel: '',
     translationUrl: '',      // empty: the embedding server above
     translationApiKey: '',
@@ -57,6 +59,7 @@ export const EMBEDDING_SERVER_DEFAULTS = {
     apiKey: '',
     model: '',
     dimensionsIndex: 0,
+    translationEnabled: false, // off: searches are embedded as typed, with no chat call
     translationModel: '',
     translationUrl: '',      // empty: the embedding server above
     translationApiKey: '',

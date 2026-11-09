@@ -1544,6 +1544,8 @@
       "test_model_missing": "接続済みですが、このサーバーはモデルを提供していません",
       "test_images_unsupported": "接続しましたが、このモデルは画像を受け付けません",
       "server_model_hint": "サーバーで提供されているモデル名。画像を受け付けるモデルが必要です（例: embeddinggemma-2）",
+      "translation_enabled": "検索を翻訳",
+      "translation_enabled_hint": "埋め込みの前にチャットモデルで各検索を英語に翻訳します。検索ごとにチャット要求が追加されます",
       "translation_model": "検索翻訳モデル",
       "translation_model_hint": "検索語を先に英語へ翻訳する、同じサーバー上の任意のチャットモデル",
       "translation_model_placeholder": "空欄: 入力どおりに検索",
