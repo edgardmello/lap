@@ -1544,6 +1544,8 @@
       "test_model_missing": "연결됨, 이 서버는 해당 모델을 제공하지 않습니다",
       "test_images_unsupported": "연결되었지만 모델이 이미지를 지원하지 않습니다",
       "server_model_hint": "서버에서 제공하는 모델 이름. 이미지를 지원하는 모델이어야 합니다 (예: embeddinggemma-2)",
+      "translation_enabled": "검색어 번역",
+      "translation_enabled_hint": "임베딩 전에 채팅 모델이 각 검색어를 영어로 번역합니다. 검색마다 채팅 요청이 추가됩니다",
       "translation_model": "검색 번역 모델",
       "translation_model_hint": "검색어를 먼저 영어로 번역하는 같은 서버의 선택적 채팅 모델",
       "translation_model_placeholder": "비워 두면 입력한 그대로 검색",

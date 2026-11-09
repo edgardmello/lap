@@ -1916,7 +1916,8 @@ function buildServerSettings(provider, connection) {
     apiKey: connection?.apiKey || '',
     model: connection?.model || defaults.model,
     dimensions,
-    translationModel: connection?.translationModel || '',
+    // Translation off sends no model, so searches skip the chat request.
+    translationModel: connection?.translationEnabled ? (connection?.translationModel || '') : '',
     translationUrl: connection?.translationUrl || '',
     translationApiKey: connection?.translationApiKey || '',
     scoreAdjustment: scoreAdjustmentFor(connection),
