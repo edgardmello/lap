@@ -3,6 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 const routes = [
   {
+    path: '/quick-view',
+    name: 'QuickView',
+    component: () => import('@/views/QuickView.vue'),
+  },
+  {
     path: '/',
     name: 'Home',
     component: () => import('@/views/Home.vue'),

@@ -115,7 +115,7 @@ onMounted(async () => {
 
   // Initialize library state from backend
   try {
-    await libConfig.init();
+    if (win.label !== 'quickview') await libConfig.init();
   } catch (error) {
     console.error('[App] Library initialization failed:', error);
     // Continue anyway - user can retry from UI

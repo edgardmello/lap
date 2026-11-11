@@ -169,6 +169,14 @@ fn get_migrations() -> Vec<Migration> {
             description: "Add afiles.embed_model column",
             sql: "",
         },
+        Migration {
+            version: 21,
+            description: "Library color labels",
+            sql: "CREATE TABLE IF NOT EXISTS afile_labels (
+                file_id INTEGER PRIMARY KEY REFERENCES afiles(id) ON DELETE CASCADE,
+                label TEXT NOT NULL CHECK(label IN ('red','yellow','green','blue','purple'))
+            ); CREATE INDEX IF NOT EXISTS idx_afile_labels_label ON afile_labels(label);",
+        },
     ]
 }
 
@@ -597,7 +605,7 @@ mod album_filter_migration_tests {
         // Simulate migration completing before the version was persisted.
         conn.execute_batch("PRAGMA user_version=17;").unwrap();
         check_and_migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(),20);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(),21);
     }
 
     #[test]
@@ -611,7 +619,7 @@ mod album_filter_migration_tests {
         // Simulate migration completing before the version was persisted.
         conn.execute_batch("PRAGMA user_version=18;").unwrap();
         check_and_migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(), 20);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap(), 21);
     }
 }
 
@@ -640,12 +648,12 @@ mod embed_model_migration_tests {
             .query_row("SELECT embed_model FROM afiles WHERE id = 1", [], |row| row.get(0))
             .unwrap();
         assert_eq!(model, None, "legacy vectors stay NULL, which means built-in CLIP");
-        assert_eq!(user_version(&conn), 20);
+        assert_eq!(user_version(&conn), 21);
 
         // Restart before the version was persisted: the column already exists.
         conn.execute_batch("PRAGMA user_version = 19;").unwrap();
         check_and_migrate(&conn).unwrap();
-        assert_eq!(user_version(&conn), 20);
+        assert_eq!(user_version(&conn), 21);
     }
 
     #[test]
@@ -665,6 +673,6 @@ mod embed_model_migration_tests {
             })
             .unwrap();
         assert_eq!(row, (0, 0, None));
-        assert_eq!(user_version(&conn), 20);
+        assert_eq!(user_version(&conn), 21);
     }
 }
