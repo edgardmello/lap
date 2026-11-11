@@ -1,0 +1,1056 @@
+FUNCTION 10001f4a0 _TtC10FlowVision15CustomImageView::draggingEntered:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+unsigned_long_long
+_TtC10FlowVision15CustomImageView::draggingEntered_(ID param_1,SEL param_2,ID param_3)
+
+{
+  unsigned_long_long uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_1000206c8(param_1);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1;
+}
+
+
+FUNCTION 10001fa90 _TtC10FlowVision15CustomImageView::performDragOperation:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+bool _TtC10FlowVision15CustomImageView::performDragOperation_(ID param_1,SEL param_2,ID param_3)
+
+{
+  uint uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_10001f4f8(param_3);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1 & 1;
+}
+
+
+FUNCTION 10002cec0 _TtC10FlowVision20ThumbnailExcludeView::tableView:pasteboardWriterForRow:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision20ThumbnailExcludeView::tableView_pasteboardWriterForRow_
+             (ID param_1,SEL param_2,ID param_3,long_long param_4)
+
+{
+  ID IVar1;
+  NSString *pNVar2;
+  String SVar3;
+
+  IVar1 = _objc_allocWithZone(PTR__OBJC_CLASS___NSPasteboardItem_1002e60e8);
+  IVar1 = NSPasteboardItem::init(IVar1,PTR_s_init_1002e1438);
+  SVar3 = Swift::CustomStringConvertible::get_description();
+  pNVar2 = (extension_Foundation)::Swift::String::_bridgeToObjectiveC();
+  _swift_bridgeObjectRelease(SVar3.bridgeObject);
+  if (DAT_1002efa98 != -1) {
+    _swift_once(&DAT_1002efa98,FUN_10002bc94);
+  }
+  NSPasteboardItem::setString_forType_
+            (IVar1,PTR_s_setString_forType__1002e42a8,pNVar2,DAT_1002f1bf8);
+  return IVar1;
+}
+
+
+FUNCTION 100050ad0 _TtC10FlowVision17CustomPathControl::draggingEntered:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+unsigned_long_long
+_TtC10FlowVision17CustomPathControl::draggingEntered_(ID param_1,SEL param_2,ID param_3)
+
+{
+  unsigned_long_long uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_100050590(param_3);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1;
+}
+
+
+FUNCTION 1000515b8 _TtC10FlowVision17CustomPathControl::performDragOperation:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+bool _TtC10FlowVision17CustomPathControl::performDragOperation_(ID param_1,SEL param_2,ID param_3)
+
+{
+  uint uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_100050b78(param_3);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1 & 1;
+}
+
+
+FUNCTION 1000e3ed8 _TtC10FlowVision13CustomTagView::tableView:pasteboardWriterForRow:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision13CustomTagView::tableView_pasteboardWriterForRow_
+             (ID param_1,SEL param_2,ID param_3,long_long param_4)
+
+{
+  ID IVar1;
+  NSString *pNVar2;
+  String SVar3;
+
+  IVar1 = _objc_allocWithZone(PTR__OBJC_CLASS___NSPasteboardItem_1002e60e8);
+  IVar1 = NSPasteboardItem::init(IVar1,PTR_s_init_1002e1438);
+  SVar3 = Swift::CustomStringConvertible::get_description();
+  pNVar2 = (extension_Foundation)::Swift::String::_bridgeToObjectiveC();
+  _swift_bridgeObjectRelease(SVar3.bridgeObject);
+  if (DAT_1002efb60 != -1) {
+    _swift_once(&DAT_1002efb60,FUN_1000e19dc);
+  }
+  NSPasteboardItem::setString_forType_
+            (IVar1,PTR_s_setString_forType__1002e42a8,pNVar2,DAT_1002f45d0);
+  return IVar1;
+}
+
+
+FUNCTION 10010d968 _TtC10FlowVision24CustomOutlineViewManager::outlineView:pasteboardWriterForItem:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision24CustomOutlineViewManager::outlineView_pasteboardWriterForItem_
+             (ID param_1,SEL param_2,ID param_3,ID param_4)
+
+{
+  ID IVar1;
+  undefined1 auStack_50 [32];
+
+  _swift_unknownObjectRetain(param_4);
+  Swift::__bridgeAnyObjectToAny();
+  _swift_unknownObjectRelease(param_4);
+  IVar1 = FUN_10010fac8(auStack_50);
+  FUN_10001d560(auStack_50);
+  return IVar1;
+}
+
+
+FUNCTION 10011026c _TtC10FlowVision16CustomEffectView::draggingEntered:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+unsigned_long_long
+_TtC10FlowVision16CustomEffectView::draggingEntered_(ID param_1,SEL param_2,ID param_3)
+
+{
+  unsigned_long_long uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_1001108c0(param_1);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1;
+}
+
+
+FUNCTION 100110728 _TtC10FlowVision16CustomEffectView::performDragOperation:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+bool _TtC10FlowVision16CustomEffectView::performDragOperation_(ID param_1,SEL param_2,ID param_3)
+
+{
+  uint uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_1001102c4(param_3);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1 & 1;
+}
+
+
+FUNCTION 10012c258 _TtC10FlowVision12CoreAreaView::draggingEntered:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+unsigned_long_long
+_TtC10FlowVision12CoreAreaView::draggingEntered_(ID param_1,SEL param_2,ID param_3)
+
+{
+  unsigned_long_long uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_1001108c0(param_1);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1;
+}
+
+
+FUNCTION 10012c828 _TtC10FlowVision12CoreAreaView::performDragOperation:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+bool _TtC10FlowVision12CoreAreaView::performDragOperation_(ID param_1,SEL param_2,ID param_3)
+
+{
+  uint uVar1;
+
+  _swift_unknownObjectRetain(param_3);
+  uVar1 = FUN_10012c2b0(param_3);
+  _swift_unknownObjectRelease(param_3);
+  return uVar1 & 1;
+}
+
+
+FUNCTION 100134ca4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:itemForRepresentedObjectAtIndexPath:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision27CustomCollectionViewManager::
+   collectionView_itemForRepresentedObjectAtIndexPath_(ID param_1,SEL param_2,ID param_3,ID param_4)
+
+{
+  IndexPath IVar1;
+  ID IVar2;
+  long extraout_x8;
+  long lVar3;
+  undefined1 auStack_c0 [128];
+
+  IVar1 = Foundation::IndexPath::typeMetadataAccessor();
+  lVar3 = *(long *)(IVar1.unknown + -8);
+  (*(code *)PTR____chkstk_darwin_1002b8260)(*(undefined8 *)(lVar3 + 0x40));
+  Foundation::IndexPath::__unconditionallyBridgeFromObjectiveC((IndexPath)param_4);
+  IVar2 = FUN_100134858(param_3,auStack_c0 + (0x80 - (extraout_x8 + 0xfU & 0xfffffffffffffff0)));
+  (**(code **)(lVar3 + 8))
+            (auStack_c0 + (0x80 - (extraout_x8 + 0xfU & 0xfffffffffffffff0)),IVar1.unknown);
+  return IVar2;
+}
+
+
+FUNCTION 100134ee4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndexPath:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision27CustomCollectionViewManager::collectionView_pasteboardWriterForItemAtIndexPath_
+             (ID param_1,SEL param_2,ID param_3,ID param_4)
+
+{
+  IndexPath IVar1;
+  ID IVar2;
+  long extraout_x8;
+  long lVar3;
+  undefined1 auStack_c0 [128];
+
+  IVar1 = Foundation::IndexPath::typeMetadataAccessor();
+  lVar3 = *(long *)(IVar1.unknown + -8);
+  (*(code *)PTR____chkstk_darwin_1002b8260)(*(undefined8 *)(lVar3 + 0x40));
+  Foundation::IndexPath::__unconditionallyBridgeFromObjectiveC((IndexPath)param_4);
+  IVar2 = FUN_100136024(auStack_c0 + (0x80 - (extraout_x8 + 0xfU & 0xfffffffffffffff0)));
+  (**(code **)(lVar3 + 8))
+            (auStack_c0 + (0x80 - (extraout_x8 + 0xfU & 0xfffffffffffffff0)),IVar1.unknown);
+  return IVar2;
+}
+
+
+FUNCTION 100139758 _TtC10FlowVision30FavoritesPopoverViewController::tableView:pasteboardWriterForRow:
+
+/* WARNING: Function: _objc_retain replaced with injection: _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_autoreleaseReturnValue replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x20 bytes */
+
+ID _TtC10FlowVision30FavoritesPopoverViewController::tableView_pasteboardWriterForRow_
+             (ID param_1,SEL param_2,ID param_3,long_long param_4)
+
+{
+  ID IVar1;
+  NSString *pNVar2;
+  String SVar3;
+
+  IVar1 = _objc_allocWithZone(PTR__OBJC_CLASS___NSPasteboardItem_1002e60e8);
+  IVar1 = NSPasteboardItem::init(IVar1,PTR_s_init_1002e1438);
+  SVar3 = Swift::CustomStringConvertible::get_description();
+  pNVar2 = (extension_Foundation)::Swift::String::_bridgeToObjectiveC();
+  _swift_bridgeObjectRelease(SVar3.bridgeObject);
+  if (DAT_1002efc78 != -1) {
+    _swift_once(&DAT_1002efc78,FUN_1001377bc);
+  }
+  NSPasteboardItem::setString_forType_
+            (IVar1,PTR_s_setString_forType__1002e42a8,pNVar2,DAT_1002f5248);
+  return IVar1;
+}
+
+
+FUNCTION 10014a03c _TtC10FlowVision11AppDelegate::editCopy:
+
+/* WARNING: Function: _objc_retainAutoreleasedReturnValue replaced with injection:
+   _objc_retain_fixup */
+/* WARNING: Function: _objc_release replaced with injection: _objc_release_fixup */
+/* WARNING: Function: _objc_opt_self replaced with injection: _objc_retain_fixup */
+/* Function Stack Size: 0x18 bytes */
+
+void _TtC10FlowVision11AppDelegate::editCopy_(ID param_1,SEL param_2,ID param_3)
+
+{
+  code *pcVar1;
+  ID IVar2;
+  long lVar3;
+  undefined8 uVar4;
+  long lVar5;
+  NSArray *pNVar6;
+  long lVar7;
+  undefined8 uVar8;
+
+  if (*(ID *)PTR__NSApp_1002b82b8 == 0) {
+                    /* WARNING: Does not return */
+    pcVar1 = (code *)SoftwareBreakpoint(1,0x10014e388);
+    (*pcVar1)();
+  }
+  IVar2 = _objc_msgSend(*(ID *)PTR__NSApp_1002b82b8,PTR_s_keyWindow_1002e42c8);
+  if (((IVar2 == 0) || (IVar2 = _objc_msgSend(IVar2,PTR_s_firstResponder_1002e42b8), IVar2 == 0)) ||
+     ((lVar3 = _swift_dynamicCastObjCClass(IVar2,PTR__OBJC_CLASS___NSTextView_1002e6298), lVar3 == 0
+      && (lVar3 = _swift_dynamicCastObjCClass(IVar2,PTR__OBJC_CLASS___NSTextField_1002e5f10),
+         lVar3 == 0)))) {
+    IVar2 = NSApplication::sharedApplication
+                      ((ID)PTR__OBJC_CLASS___NSApplication_1002e5fa0,
+                       PTR_s_sharedApplication_1002e42d8);
+    IVar2 = NSApplication::mainWindow(IVar2,PTR_s_mainWindow_1002e5060);
+    if ((IVar2 == 0) ||
+       (IVar2 = NSApplication::contentViewController(IVar2,PTR_s_contentViewController_1002e4738),
+       IVar2 == 0)) {
+      return;
+    }
+    uVar4 = FUN_100045498(0);
+    lVar5 = _swift_dynamicCastClass(IVar2,uVar4);
+    lVar3 = ::_TtC10FlowVision14ViewController::publicVar;
+    if (lVar5 != 0) {
+      lVar7 = *(long *)(lVar5 + ::_TtC10FlowVision14ViewController::publicVar);
+      if (*(char *)(lVar7 + _TtC10FlowVision9PublicVar::isInLargeView) == '\x01') {
+        lVar3 = _swift_unknownObjectWeakLoadStrong
+                          (lVar5 + ::_TtC10FlowVision14ViewController::largeImageView);
+        if (lVar3 == 0) {
+                    /* WARNING: Does not return */
+          pcVar1 = (code *)SoftwareBreakpoint(1,0x10014e38c);
+          (*pcVar1)();
+        }
+        FUN_100014d00();
+      }
+      else {
+        if (*(char *)(lVar7 + _TtC10FlowVision9PublicVar::isOutlineViewFirstResponder) == '\x01') {
+          lVar7 = _swift_unknownObjectWeakLoadStrong
+                            (lVar5 + ::_TtC10FlowVision14ViewController::outlineView);
+          if (lVar7 == 0) {
+                    /* WARNING: Does not return */
+            pcVar1 = (code *)SoftwareBreakpoint(1,0x10014e390);
+            (*pcVar1)();
+          }
+          FUN_1000df288(1);
+          lVar7 = *(long *)(lVar5 + lVar3);
+        }
+        if (*(char *)(lVar7 + _TtC10FlowVision9PublicVar::isCollectionViewFirstResponder) == '\x01')
+        {
+          IVar2 = NSPasteboard::generalPasteboard
+                            ((ID)PTR__OBJC_CLASS___NSPasteboard_1002e5f98,
+                             PTR_s_generalPasteboard_1002e4298);
+          NSPasteboard::clearContents(IVar2,PTR_s_clearContents_1002e42a0);
+          uVar8 = *(undefined8 *)(lVar5 + lVar3);
+          _swift_retain(uVar8);
+          uVar4 = FUN_100030eb8();
+          _swift_release(uVar8);
+          uVar8 = FUN_10017d908(uVar4);
+          _swift_bridgeObjectRelease(uVar4);
+          FUN_10001d4f8(&DAT_1002f1388);
+          pNVar6 = (extension_Foundation)::Swift::Array<undefined>::_bridgeToObjectiveC();
+          _swift_bridgeObjectRelease(uVar8);
+          NSPasteboard::writeObjects_(IVar2,PTR_s_writeObjects__1002e42b0,pNVar6);
+          uVar4 = 0;
+          if (DAT_1002efb58 != -1) {
+            uVar4 = _swift_once(&DAT_1002efb58,FUN_1000afdb8);
+          }
+          *(undefined1 *)(DAT_1002f99a8 + 0x68) = 0;
+          FUN_100163dbc(uVar4);
+        }
+      }
+    }
+  }
+  else {
+    _objc_msgSend(IVar2,PTR_s_tryToPerform_with__1002e5af0,PTR_s_copy__1002e42c0,0);
+  }
+  return;
+}
+
+
+MATCHING_SYMBOLS
+EXTERNAL:00000260 /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_CGImageSourceCreateThumbnailAtIndex
+EXTERNAL:0000053d /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::_NSPasteboardTypeFileURL
+EXTERNAL:0000053e /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::_NSPasteboardTypeString
+EXTERNAL:000005c6 /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::_OBJC_CLASS_$_NSPasteboard
+EXTERNAL:000005c7 /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::_OBJC_CLASS_$_NSPasteboardItem
+EXTERNAL:00000665 /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_kCGImageDestinationEmbedThumbnail
+EXTERNAL:00000698 /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_kCGImageSourceCreateThumbnailFromImageAlways
+EXTERNAL:00000699 /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_kCGImageSourceCreateThumbnailFromImageIfAbsent
+EXTERNAL:0000069a /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_kCGImageSourceCreateThumbnailWithTransform
+EXTERNAL:000006a0 /System/Library/Frameworks/ImageIO.framework/Versions/A/ImageIO::_kCGImageSourceThumbnailMaxPixelSize
+EXTERNAL:00000706 /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::generalPasteboard
+EXTERNAL:00000847 /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::pasteboardItems
+EXTERNAL:0000091d /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit::pasteboardWithName:
+10001f4a0 _TtC10FlowVision15CustomImageView::draggingEntered:
+10002a918 _TtC10FlowVision28CustomSettingsViewController::thumbnailOfFolderUseStackingCheckbox
+10002a938 _TtC10FlowVision28CustomSettingsViewController::setThumbnailOfFolderUseStackingCheckbox:
+10002b138 _TtC10FlowVision28CustomSettingsViewController::thumbnailOfFolderUseStackingToggled:
+10002bcc8 _TtC10FlowVision20ThumbnailExcludeView::intrinsicContentSize
+10002bce0 _TtC10FlowVision20ThumbnailExcludeView::awakeFromNib
+10002c67c _TtC10FlowVision20ThumbnailExcludeView::editControlClicked:
+10002ccf8 _TtC10FlowVision20ThumbnailExcludeView::initWithFrame:
+10002cd84 _TtC10FlowVision20ThumbnailExcludeView::initWithCoder:
+10002ce54 _TtC10FlowVision20ThumbnailExcludeView::.cxx_destruct
+10002ceac _TtC10FlowVision20ThumbnailExcludeView::numberOfRowsInTableView:
+10002cec0 _TtC10FlowVision20ThumbnailExcludeView::tableView:pasteboardWriterForRow:
+10002cfc8 _TtC10FlowVision20ThumbnailExcludeView::tableView:validateDrop:proposedRow:proposedDropOperation:
+10002cfd8 _TtC10FlowVision20ThumbnailExcludeView::tableView:acceptDrop:row:dropOperation:
+10002d320 _TtC10FlowVision20ThumbnailExcludeView::tableView:viewForTableColumn:row:
+100050ad0 _TtC10FlowVision17CustomPathControl::draggingEntered:
+100050b30 _TtC10FlowVision17CustomPathControl::draggingEnded:
+100051aa4 _TtC10FlowVision17CustomPathControl::draggingUpdated:
+100051aa8 _TtC10FlowVision17CustomPathControl::draggingExited:
+10005ba80 _TtC10FlowVision24CustomCollectionViewItem::imageViewObj
+10005baa0 _TtC10FlowVision24CustomCollectionViewItem::setImageViewObj:
+10005bab4 _TtC10FlowVision24CustomCollectionViewItem::imageNameField
+10005bad4 _TtC10FlowVision24CustomCollectionViewItem::setImageNameField:
+10005bae8 _TtC10FlowVision24CustomCollectionViewItem::imageLabel
+10005bb08 _TtC10FlowVision24CustomCollectionViewItem::setImageLabel:
+10005bb1c _TtC10FlowVision24CustomCollectionViewItem::videoFlag
+10005bb3c _TtC10FlowVision24CustomCollectionViewItem::setVideoFlag:
+10005bb50 _TtC10FlowVision24CustomCollectionViewItem::videoView
+10005bb70 _TtC10FlowVision24CustomCollectionViewItem::setVideoView:
+10005c4a8 _TtC10FlowVision24CustomCollectionViewItem::viewDidLoad
+10005c618 _TtC10FlowVision24CustomCollectionViewItem::viewWillAppear
+10005c640 _TtC10FlowVision24CustomCollectionViewItem::viewWillDisappear
+10005c6a0 _TtC10FlowVision24CustomCollectionViewItem::isSelected
+10005c6e0 _TtC10FlowVision24CustomCollectionViewItem::setSelected:
+10005d4c8 _TtC10FlowVision24CustomCollectionViewItem::prepareForReuse
+1000669c4 _TtC10FlowVision24CustomCollectionViewItem::mouseDown:
+100066a14 _TtC10FlowVision24CustomCollectionViewItem::otherMouseDown:
+100066d9c _TtC10FlowVision24CustomCollectionViewItem::otherMouseUp:
+100066dec _TtC10FlowVision24CustomCollectionViewItem::rightMouseDown:
+100069710 _TtC10FlowVision24CustomCollectionViewItem::rightMouseUp:
+100069964 _TtC10FlowVision24CustomCollectionViewItem::actToggleFinderTag:
+100069af4 _TtC10FlowVision24CustomCollectionViewItem::actRemoveAllFinderTags
+100069dd0 _TtC10FlowVision24CustomCollectionViewItem::actScanEnhancedIndex
+100069e04 _TtC10FlowVision24CustomCollectionViewItem::actScanEnhancedIndexReadmeAction
+100069e38 _TtC10FlowVision24CustomCollectionViewItem::actTagLearnMore
+100069f58 _TtC10FlowVision24CustomCollectionViewItem::actRate:
+10006a098 _TtC10FlowVision24CustomCollectionViewItem::actRateReadmeAction
+10006a0cc _TtC10FlowVision24CustomCollectionViewItem::actRefresh
+10006a308 _TtC10FlowVision24CustomCollectionViewItem::actOpen
+10006a330 _TtC10FlowVision24CustomCollectionViewItem::actOpenInNewTab
+10006a38c _TtC10FlowVision24CustomCollectionViewItem::actOpenInNewTabInBackground
+10006bd98 _TtC10FlowVision24CustomCollectionViewItem::actShowInOriginalFolder
+10006bf28 _TtC10FlowVision24CustomCollectionViewItem::actShowInFinder
+10006bf5c _TtC10FlowVision24CustomCollectionViewItem::actNewFolderWithSelection
+10006c070 _TtC10FlowVision24CustomCollectionViewItem::actGetInfo
+10006c1c4 _TtC10FlowVision24CustomCollectionViewItem::actRename
+10006c1f8 _TtC10FlowVision24CustomCollectionViewItem::actNewFolder
+10006c3c8 _TtC10FlowVision24CustomCollectionViewItem::actNewTextFile
+10006c704 _TtC10FlowVision24CustomCollectionViewItem::actCopyPath
+10006c8f0 _TtC10FlowVision24CustomCollectionViewItem::actCopy
+10006c924 _TtC10FlowVision24CustomCollectionViewItem::actCopyToDownload
+10006ca40 _TtC10FlowVision24CustomCollectionViewItem::actMoveToDownload
+10006cb58 _TtC10FlowVision24CustomCollectionViewItem::actDelete
+10006cb8c _TtC10FlowVision24CustomCollectionViewItem::actPaste
+10006cd5c _TtC10FlowVision24CustomCollectionViewItem::actMove
+10006dae0 _TtC10FlowVision24CustomCollectionViewItem::selectApplication:
+10006e154 _TtC10FlowVision24CustomCollectionViewItem::openFileWithApp:
+10006e1a4 _TtC10FlowVision24CustomCollectionViewItem::actShare:
+10006e51c _TtC10FlowVision24CustomCollectionViewItem::initWithNibName:bundle:
+10006e884 _TtC10FlowVision24CustomCollectionViewItem::initWithCoder:
+10006e8e0 _TtC10FlowVision24CustomCollectionViewItem::.cxx_destruct
+1000e3ed8 _TtC10FlowVision13CustomTagView::tableView:pasteboardWriterForRow:
+10010d968 _TtC10FlowVision24CustomOutlineViewManager::outlineView:pasteboardWriterForItem:
+10011026c _TtC10FlowVision16CustomEffectView::draggingEntered:
+10012c258 _TtC10FlowVision12CoreAreaView::draggingEntered:
+100134800 _TtC10FlowVision27CustomCollectionViewManager::collectionView:numberOfItemsInSection:
+100134ca4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:itemForRepresentedObjectAtIndexPath:
+100134d6c _TtC10FlowVision27CustomCollectionViewManager::collectionView:didEndDisplayingItem:forRepresentedObjectAtIndexPath:
+100134de8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didSelectItemsAtIndexPaths:
+100134dec _TtC10FlowVision27CustomCollectionViewManager::collectionView:didDeselectItemsAtIndexPaths:
+100134df0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:sizeForItemAtIndexPath:
+100134ee4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndexPath:
+10013543c _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldSelectItemsAtIndexPaths:
+100135510 _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldDeselectItemsAtIndexPaths:
+100135664 _TtC10FlowVision27CustomCollectionViewManager::init
+1001356c4 _TtC10FlowVision27CustomCollectionViewManager::.cxx_destruct
+100139758 _TtC10FlowVision30FavoritesPopoverViewController::tableView:pasteboardWriterForRow:
+100182e68 _TtC10FlowVision20CustomCollectionView::becomeFirstResponder
+100183284 _TtC10FlowVision20CustomCollectionView::resignFirstResponder
+1001832b8 _TtC10FlowVision20CustomCollectionView::keyDown:
+100183410 _TtC10FlowVision20CustomCollectionView::rightMouseDown:
+10018422c _TtC10FlowVision20CustomCollectionView::rightMouseUp:
+100184444 _TtC10FlowVision20CustomCollectionView::actOpenInFinder
+100184478 _TtC10FlowVision20CustomCollectionView::actNewFolder
+1001844ac _TtC10FlowVision20CustomCollectionView::actPaste
+10018464c _TtC10FlowVision20CustomCollectionView::actMove
+100184674 _TtC10FlowVision20CustomCollectionView::actRefresh
+100184978 _TtC10FlowVision20CustomCollectionView::actCopyPath
+100184c80 _TtC10FlowVision20CustomCollectionView::actOpenInTerminal
+100184e8c _TtC10FlowVision20CustomCollectionView::actNewTextFile
+1001864f4 _TtC10FlowVision20CustomCollectionView::actFilterByFinderTag:
+10018664c _TtC10FlowVision20CustomCollectionView::actClearFinderTagFilter
+10018674c _TtC10FlowVision20CustomCollectionView::actReverseFinderTagFilter
+10018677c _TtC10FlowVision20CustomCollectionView::actSetFinderTagFilterModeAnd
+1001868f4 _TtC10FlowVision20CustomCollectionView::actSetFinderTagFilterModeOr
+10018691c _TtC10FlowVision20CustomCollectionView::actTagLearnMore
+100186b04 _TtC10FlowVision20CustomCollectionView::actFilterByRating:
+100186c5c _TtC10FlowVision20CustomCollectionView::actClearRatingFilter
+100186d5c _TtC10FlowVision20CustomCollectionView::actReverseRatingFilter
+100186d84 _TtC10FlowVision20CustomCollectionView::actRatingReadme
+100186d88 _TtC10FlowVision20CustomCollectionView::initWithFrame:
+100186ed0 _TtC10FlowVision20CustomCollectionView::initWithCoder:
+100186f28 _TtC10FlowVision20CustomCollectionView::.cxx_destruct
+1001aace0 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:
+1001aad68 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aad68_6e7d234f
+1001aada4 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aada4_6e7d234f
+1001aadc8 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aadc8_6e7d234f
+1001aae98 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aae98_6e7d234f
+1001aaea8 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaea8_6e7d234f
+1001aaefc SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaefc_6e7d234f
+1001aaf44 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaf44_6e7d234f
+1001aaf78 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaf78_6e7d234f
+1001aaf9c SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaf9c_6e7d234f
+1001aaff8 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001aaff8_6e7d234f
+1001ab01c SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab01c_6e7d234f
+1001ab030 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab030_6e7d234f
+1001ab054 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab054_6e7d234f
+1001ab064 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab064_6e7d234f
+1001ab0a0 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab0a0_129a3504
+1001ab0e0 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab0e0_86cddc93
+1001ab100 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab100_129a3504
+1001ab134 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab134_f48214b9
+1001ab19c SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab19c_6e7d234f
+1001ab264 SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab264_6e7d234f
+1001ab27c SDImageIOAnimatedCoder::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:::override::prt_1001ab27c_6e7d234f
+100247644 _CGImageSourceCreateThumbnailAtIndex
+10024cc80 objc_stub::createFrameAtIndex:source:scale:preserveAspectRatio:thumbnailSize:lazyDecode:animatedImage:decodeToHDR:
+1002507c0 objc_stub::sd_isThumbnail
+100254388 objc::method_list_t::_TtC10FlowVision20CustomCollectionView
+100254888 objc::method_list_t::_TtC10FlowVision24CustomCollectionViewItem
+100254b80 objc::method_list_t::_TtC10FlowVision27CustomCollectionViewManager
+10025a1f8 objc::method_list_t::_TtC10FlowVision20ThumbnailExcludeView
+10025ad68 objc::method_list_t::_TtC10FlowVision27CustomCollectionViewManager
+10025ad78 _TtC10FlowVision27CustomCollectionViewManager::collectionView:numberOfItemsInSection:
+10025ad84 _TtC10FlowVision27CustomCollectionViewManager::collectionView:itemForRepresentedObjectAtIndexPath:
+10025ad90 _TtC10FlowVision27CustomCollectionViewManager::collectionView:itemForRepresentedObjectAtIndexPath:
+10025b050 objc::method_list_t::NSPasteboardWriting
+10025b060 objc::Protocols::NSPasteboardWriting::writableTypesForPasteboard:
+10025b06c objc::Protocols::NSPasteboardWriting::writableTypesForPasteboard:
+10025b078 objc::Protocols::NSPasteboardWriting::pasteboardPropertyListForType:
+10025b084 objc::Protocols::NSPasteboardWriting::pasteboardPropertyListForType:
+10025b2d0 objc::method_list_t::_TtC10FlowVision27CustomCollectionViewManager
+10025b2e0 _TtC10FlowVision27CustomCollectionViewManager::numberOfSectionsInCollectionView:
+10025b2ec _TtC10FlowVision27CustomCollectionViewManager::numberOfSectionsInCollectionView:
+10025b2f8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:viewForSupplementaryElementOfKind:atIndexPath:
+10025b304 _TtC10FlowVision27CustomCollectionViewManager::collectionView:viewForSupplementaryElementOfKind:atIndexPath:
+10025b308 objc::method_list_t::_TtC10FlowVision27CustomCollectionViewManager
+10025b318 _TtC10FlowVision27CustomCollectionViewManager::collectionView:canDragItemsAtIndexPaths:withEvent:
+10025b324 _TtC10FlowVision27CustomCollectionViewManager::collectionView:canDragItemsAtIndexPaths:withEvent:
+10025b330 _TtC10FlowVision27CustomCollectionViewManager::collectionView:canDragItemsAtIndexes:withEvent:
+10025b33c _TtC10FlowVision27CustomCollectionViewManager::collectionView:canDragItemsAtIndexes:withEvent:
+10025b348 _TtC10FlowVision27CustomCollectionViewManager::collectionView:writeItemsAtIndexPaths:toPasteboard:
+10025b354 _TtC10FlowVision27CustomCollectionViewManager::collectionView:writeItemsAtIndexPaths:toPasteboard:
+10025b360 _TtC10FlowVision27CustomCollectionViewManager::collectionView:writeItemsAtIndexes:toPasteboard:
+10025b36c _TtC10FlowVision27CustomCollectionViewManager::collectionView:writeItemsAtIndexes:toPasteboard:
+10025b378 _TtC10FlowVision27CustomCollectionViewManager::collectionView:namesOfPromisedFilesDroppedAtDestination:forDraggedItemsAtIndexPaths:
+10025b384 _TtC10FlowVision27CustomCollectionViewManager::collectionView:namesOfPromisedFilesDroppedAtDestination:forDraggedItemsAtIndexPaths:
+10025b390 _TtC10FlowVision27CustomCollectionViewManager::collectionView:namesOfPromisedFilesDroppedAtDestination:forDraggedItemsAtIndexes:
+10025b39c _TtC10FlowVision27CustomCollectionViewManager::collectionView:namesOfPromisedFilesDroppedAtDestination:forDraggedItemsAtIndexes:
+10025b3a8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingImageForItemsAtIndexPaths:withEvent:offset:
+10025b3b4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingImageForItemsAtIndexPaths:withEvent:offset:
+10025b3c0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingImageForItemsAtIndexes:withEvent:offset:
+10025b3cc _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingImageForItemsAtIndexes:withEvent:offset:
+10025b3d8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:validateDrop:proposedIndexPath:dropOperation:
+10025b3e4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:validateDrop:proposedIndex:dropOperation:
+10025b3f0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:acceptDrop:indexPath:dropOperation:
+10025b3fc _TtC10FlowVision27CustomCollectionViewManager::collectionView:acceptDrop:index:dropOperation:
+10025b408 _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndexPath:
+10025b414 _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndexPath:
+10025b420 _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndex:
+10025b42c _TtC10FlowVision27CustomCollectionViewManager::collectionView:pasteboardWriterForItemAtIndex:
+10025b438 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:willBeginAtPoint:forItemsAtIndexPaths:
+10025b444 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:willBeginAtPoint:forItemsAtIndexPaths:
+10025b450 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:willBeginAtPoint:forItemsAtIndexes:
+10025b45c _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:willBeginAtPoint:forItemsAtIndexes:
+10025b468 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:endedAtPoint:dragOperation:
+10025b474 _TtC10FlowVision27CustomCollectionViewManager::collectionView:draggingSession:endedAtPoint:dragOperation:
+10025b480 _TtC10FlowVision27CustomCollectionViewManager::collectionView:updateDraggingItemsForDrag:
+10025b48c _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldChangeItemsAtIndexPaths:toHighlightState:
+10025b498 _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldChangeItemsAtIndexPaths:toHighlightState:
+10025b4a4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didChangeItemsAtIndexPaths:toHighlightState:
+10025b4b0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didChangeItemsAtIndexPaths:toHighlightState:
+10025b4bc _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldSelectItemsAtIndexPaths:
+10025b4c8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldSelectItemsAtIndexPaths:
+10025b4d4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldDeselectItemsAtIndexPaths:
+10025b4e0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:shouldDeselectItemsAtIndexPaths:
+10025b4ec _TtC10FlowVision27CustomCollectionViewManager::collectionView:didSelectItemsAtIndexPaths:
+10025b4f8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didSelectItemsAtIndexPaths:
+10025b504 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didDeselectItemsAtIndexPaths:
+10025b510 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didDeselectItemsAtIndexPaths:
+10025b51c _TtC10FlowVision27CustomCollectionViewManager::collectionView:willDisplayItem:forRepresentedObjectAtIndexPath:
+10025b528 _TtC10FlowVision27CustomCollectionViewManager::collectionView:willDisplayItem:forRepresentedObjectAtIndexPath:
+10025b534 _TtC10FlowVision27CustomCollectionViewManager::collectionView:willDisplaySupplementaryView:forElementKind:atIndexPath:
+10025b540 _TtC10FlowVision27CustomCollectionViewManager::collectionView:willDisplaySupplementaryView:forElementKind:atIndexPath:
+10025b54c _TtC10FlowVision27CustomCollectionViewManager::collectionView:didEndDisplayingItem:forRepresentedObjectAtIndexPath:
+10025b558 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didEndDisplayingItem:forRepresentedObjectAtIndexPath:
+10025b564 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didEndDisplayingSupplementaryView:forElementOfKind:atIndexPath:
+10025b570 _TtC10FlowVision27CustomCollectionViewManager::collectionView:didEndDisplayingSupplementaryView:forElementOfKind:atIndexPath:
+10025b57c _TtC10FlowVision27CustomCollectionViewManager::collectionView:transitionLayoutForOldLayout:newLayout:
+10025b580 objc::method_list_t::_TtC10FlowVision27CustomCollectionViewManager
+10025b590 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:sizeForItemAtIndexPath:
+10025b59c _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:sizeForItemAtIndexPath:
+10025b5a8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:insetForSectionAtIndex:
+10025b5b4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:insetForSectionAtIndex:
+10025b5c0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:minimumLineSpacingForSectionAtIndex:
+10025b5cc _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:minimumLineSpacingForSectionAtIndex:
+10025b5d8 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:minimumInteritemSpacingForSectionAtIndex:
+10025b5e4 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:minimumInteritemSpacingForSectionAtIndex:
+10025b5f0 _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:referenceSizeForHeaderInSection:
+10025b5fc _TtC10FlowVision27CustomCollectionViewManager::collectionView:layout:referenceSizeForFooterInSection:
+10025b600 objc::method_list_t::_TtC10FlowVision20ThumbnailExcludeView
+10025b610 _TtC10FlowVision20ThumbnailExcludeView::controlTextDidBeginEditing:
+10025b61c _TtC10FlowVision20ThumbnailExcludeView::controlTextDidEndEditing:
+10025b628 _TtC10FlowVision20ThumbnailExcludeView::controlTextDidChange:
+10025b634 _TtC10FlowVision20ThumbnailExcludeView::control:textShouldBeginEditing:
+10025b640 _TtC10FlowVision20ThumbnailExcludeView::control:textShouldEndEditing:
+10025b64c _TtC10FlowVision20ThumbnailExcludeView::control:didFailToFormatString:errorDescription:
+10025b658 _TtC10FlowVision20ThumbnailExcludeView::control:didFailToValidatePartialString:errorDescription:
+10025b664 _TtC10FlowVision20ThumbnailExcludeView::control:isValidObject:
+10025b670 _TtC10FlowVision20ThumbnailExcludeView::control:textView:doCommandBySelector:
+10025b67c _TtC10FlowVision20ThumbnailExcludeView::control:textView:doCommandBySelector:
+10025b688 _TtC10FlowVision20ThumbnailExcludeView::control:textView:completions:forPartialWordRange:indexOfSelectedItem:
+10025b7f0 _TtC10FlowVision24CustomOutlineViewManager::outlineView:pasteboardWriterForItem:
+10025b7fc _TtC10FlowVision24CustomOutlineViewManager::outlineView:draggingSession:willBeginAtPoint:forItems:
+10025b808 _TtC10FlowVision24CustomOutlineViewManager::outlineView:draggingSession:willBeginAtPoint:forItems:
+10025b814 _TtC10FlowVision24CustomOutlineViewManager::outlineView:draggingSession:endedAtPoint:operation:
+10025b820 _TtC10FlowVision24CustomOutlineViewManager::outlineView:draggingSession:endedAtPoint:operation:
+10025b82c _TtC10FlowVision24CustomOutlineViewManager::outlineView:writeItems:toPasteboard:
+10025b838 _TtC10FlowVision24CustomOutlineViewManager::outlineView:writeItems:toPasteboard:
+10025b844 _TtC10FlowVision24CustomOutlineViewManager::outlineView:updateDraggingItemsForDrag:
+10025bb40 objc::method_list_t::NSPasteboardWriting
+10025bb50 objc::Protocols::NSPasteboardWriting::writingOptionsForType:pasteboard:
+10025bb5c objc::Protocols::NSPasteboardWriting::writingOptionsForType:pasteboard:
+10025bc48 objc::method_list_t::_TtC10FlowVision20ThumbnailExcludeView
+10025bc58 _TtC10FlowVision20ThumbnailExcludeView::numberOfRowsInTableView:
+10025bc64 _TtC10FlowVision20ThumbnailExcludeView::numberOfRowsInTableView:
+10025bc70 _TtC10FlowVision20ThumbnailExcludeView::tableView:objectValueForTableColumn:row:
+10025bc7c _TtC10FlowVision20ThumbnailExcludeView::tableView:objectValueForTableColumn:row:
+10025bc88 _TtC10FlowVision20ThumbnailExcludeView::tableView:setObjectValue:forTableColumn:row:
+10025bc94 _TtC10FlowVision20ThumbnailExcludeView::tableView:setObjectValue:forTableColumn:row:
+10025bca0 _TtC10FlowVision20ThumbnailExcludeView::tableView:sortDescriptorsDidChange:
+10025bcac _TtC10FlowVision20ThumbnailExcludeView::tableView:pasteboardWriterForRow:
+10025bcb8 _TtC10FlowVision20ThumbnailExcludeView::tableView:draggingSession:willBeginAtPoint:forRowIndexes:
+10025bcc4 _TtC10FlowVision20ThumbnailExcludeView::tableView:draggingSession:willBeginAtPoint:forRowIndexes:
+10025bcd0 _TtC10FlowVision20ThumbnailExcludeView::tableView:draggingSession:endedAtPoint:operation:
+10025bcdc _TtC10FlowVision20ThumbnailExcludeView::tableView:draggingSession:endedAtPoint:operation:
+10025bce8 _TtC10FlowVision20ThumbnailExcludeView::tableView:updateDraggingItemsForDrag:
+10025bcf4 _TtC10FlowVision20ThumbnailExcludeView::tableView:writeRowsWithIndexes:toPasteboard:
+10025bd00 _TtC10FlowVision20ThumbnailExcludeView::tableView:writeRowsWithIndexes:toPasteboard:
+10025bd0c _TtC10FlowVision20ThumbnailExcludeView::tableView:validateDrop:proposedRow:proposedDropOperation:
+10025bd18 _TtC10FlowVision20ThumbnailExcludeView::tableView:acceptDrop:row:dropOperation:
+10025bd24 _TtC10FlowVision20ThumbnailExcludeView::tableView:namesOfPromisedFilesDroppedAtDestination:forDraggedRowsWithIndexes:
+10025bd30 _TtC10FlowVision20ThumbnailExcludeView::tableView:namesOfPromisedFilesDroppedAtDestination:forDraggedRowsWithIndexes:
+10025bd38 objc::method_list_t::_TtC10FlowVision20ThumbnailExcludeView
+10025bd48 _TtC10FlowVision20ThumbnailExcludeView::tableView:viewForTableColumn:row:
+10025bd54 _TtC10FlowVision20ThumbnailExcludeView::tableView:viewForTableColumn:row:
+10025bd60 _TtC10FlowVision20ThumbnailExcludeView::tableView:rowViewForRow:
+10025bd6c _TtC10FlowVision20ThumbnailExcludeView::tableView:didAddRowView:forRow:
+10025bd78 _TtC10FlowVision20ThumbnailExcludeView::tableView:didAddRowView:forRow:
+10025bd84 _TtC10FlowVision20ThumbnailExcludeView::tableView:didRemoveRowView:forRow:
+10025bd90 _TtC10FlowVision20ThumbnailExcludeView::tableView:didRemoveRowView:forRow:
+10025bd9c _TtC10FlowVision20ThumbnailExcludeView::tableView:willDisplayCell:forTableColumn:row:
+10025bda8 _TtC10FlowVision20ThumbnailExcludeView::tableView:willDisplayCell:forTableColumn:row:
+10025bdb4 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldEditTableColumn:row:
+10025bdc0 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldEditTableColumn:row:
+10025bdcc _TtC10FlowVision20ThumbnailExcludeView::tableView:toolTipForCell:rect:tableColumn:row:mouseLocation:
+10025bdd8 _TtC10FlowVision20ThumbnailExcludeView::tableView:toolTipForCell:rect:tableColumn:row:mouseLocation:
+10025bde4 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldShowCellExpansionForTableColumn:row:
+10025bdf0 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldShowCellExpansionForTableColumn:row:
+10025bdfc _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldTrackCell:forTableColumn:row:
+10025be08 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldTrackCell:forTableColumn:row:
+10025be14 _TtC10FlowVision20ThumbnailExcludeView::tableView:dataCellForTableColumn:row:
+10025be20 _TtC10FlowVision20ThumbnailExcludeView::tableView:dataCellForTableColumn:row:
+10025be2c _TtC10FlowVision20ThumbnailExcludeView::selectionShouldChangeInTableView:
+10025be38 _TtC10FlowVision20ThumbnailExcludeView::selectionShouldChangeInTableView:
+10025be44 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldSelectRow:
+10025be50 _TtC10FlowVision20ThumbnailExcludeView::tableView:selectionIndexesForProposedSelection:
+10025be5c _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldSelectTableColumn:
+10025be68 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldSelectTableColumn:
+10025be74 _TtC10FlowVision20ThumbnailExcludeView::tableView:mouseDownInHeaderOfTableColumn:
+10025be80 _TtC10FlowVision20ThumbnailExcludeView::tableView:mouseDownInHeaderOfTableColumn:
+10025be8c _TtC10FlowVision20ThumbnailExcludeView::tableView:didClickTableColumn:
+10025be98 _TtC10FlowVision20ThumbnailExcludeView::tableView:didClickTableColumn:
+10025bea4 _TtC10FlowVision20ThumbnailExcludeView::tableView:didDragTableColumn:
+10025beb0 _TtC10FlowVision20ThumbnailExcludeView::tableView:didDragTableColumn:
+10025bebc _TtC10FlowVision20ThumbnailExcludeView::tableView:heightOfRow:
+10025bec8 _TtC10FlowVision20ThumbnailExcludeView::tableView:typeSelectStringForTableColumn:row:
+10025bed4 _TtC10FlowVision20ThumbnailExcludeView::tableView:typeSelectStringForTableColumn:row:
+10025bee0 _TtC10FlowVision20ThumbnailExcludeView::tableView:nextTypeSelectMatchFromRow:toRow:forString:
+10025beec _TtC10FlowVision20ThumbnailExcludeView::tableView:nextTypeSelectMatchFromRow:toRow:forString:
+10025bef8 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldTypeSelectForEvent:withCurrentSearchString:
+10025bf04 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldTypeSelectForEvent:withCurrentSearchString:
+10025bf10 _TtC10FlowVision20ThumbnailExcludeView::tableView:isGroupRow:
+10025bf1c _TtC10FlowVision20ThumbnailExcludeView::tableView:sizeToFitWidthOfColumn:
+10025bf28 _TtC10FlowVision20ThumbnailExcludeView::tableView:shouldReorderColumn:toColumn:
+10025bf34 _TtC10FlowVision20ThumbnailExcludeView::tableView:rowActionsForRow:edge:
+10025bf40 _TtC10FlowVision20ThumbnailExcludeView::tableView:userCanChangeVisibilityOfTableColumn:
+10025bf4c _TtC10FlowVision20ThumbnailExcludeView::tableView:userCanChangeVisibilityOfTableColumn:
+10025bf58 _TtC10FlowVision20ThumbnailExcludeView::tableView:userDidChangeVisibilityOfTableColumns:
+10025bf64 _TtC10FlowVision20ThumbnailExcludeView::tableView:userDidChangeVisibilityOfTableColumns:
+10025bf70 _TtC10FlowVision20ThumbnailExcludeView::tableViewSelectionDidChange:
+10025bf7c _TtC10FlowVision20ThumbnailExcludeView::tableViewColumnDidMove:
+10025bf88 _TtC10FlowVision20ThumbnailExcludeView::tableViewColumnDidResize:
+10025bf94 _TtC10FlowVision20ThumbnailExcludeView::tableViewSelectionIsChanging:
+10025c154 _TtC10FlowVision19LogWindowController::window:shouldDragDocumentWithEvent:from:withPasteboard:
+10025c160 _TtC10FlowVision19LogWindowController::window:shouldDragDocumentWithEvent:from:withPasteboard:
+10025caa0 s_PasteboardType_10025caa0
+10025df90 s_ThumbnailExcludeView_10025df90
+10025dff8 _TtC10FlowVision13CustomProfile::isShowThumbnailFilename
+10025e000 _TtC10FlowVision13CustomProfile::ThumbnailFilenameSize
+10025e008 _TtC10FlowVision13CustomProfile::_thumbnailCellPadding
+10025e010 _TtC10FlowVision13CustomProfile::ThumbnailBorderRadiusInGrid
+10025e018 _TtC10FlowVision13CustomProfile::ThumbnailBorderRadius
+10025e020 _TtC10FlowVision13CustomProfile::_thumbnailBorderThickness
+10025e028 _TtC10FlowVision13CustomProfile::ThumbnailLineSpaceAdjust
+10025e030 _TtC10FlowVision13CustomProfile::ThumbnailShowShadow
+10025e5b0 s_CustomCollectionViewItem_10025e5b0
+10025ebb0 _TtC10FlowVision9GlobalVar::thumbnailOfFolderUseStacking
+10025ebb8 _TtC10FlowVision9GlobalVar::thumbnailExcludeList
+10025f360 s_CustomCollectionViewManager_10025f360
+10025fa48 _TtC10FlowVision9FileModel::id
+10025fa50 _TtC10FlowVision9FileModel::idInImage
+10025fa58 _TtC10FlowVision9FileModel::idInImageAndVideo
+10025fa60 _TtC10FlowVision9FileModel::path
+10025fa68 _TtC10FlowVision9FileModel::ext
+10025fa70 _TtC10FlowVision9FileModel::type
+10025fa78 _TtC10FlowVision9FileModel::isAlias
+10025fa80 _TtC10FlowVision9FileModel::aliasActualExt
+10025fa88 _TtC10FlowVision9FileModel::aliasActualType
+10025fa90 _TtC10FlowVision9FileModel::originalSize
+10025fa98 _TtC10FlowVision9FileModel::largeSize
+10025faa0 _TtC10FlowVision9FileModel::isGetImageSizeFail
+10025faa8 _TtC10FlowVision9FileModel::thumbSize
+10025fab0 _TtC10FlowVision9FileModel::lineNo
+10025fab8 _TtC10FlowVision9FileModel::image
+10025fac0 _TtC10FlowVision9FileModel::folderImages
+10025fac8 _TtC10FlowVision9FileModel::lock
+10025fad0 _TtC10FlowVision9FileModel::isLayoutCalcued
+10025fad8 _TtC10FlowVision9FileModel::ver
+10025fae0 _TtC10FlowVision9FileModel::canBeCalcued
+10025fae8 _TtC10FlowVision9FileModel::isDir
+10025faf0 _TtC10FlowVision9FileModel::fileSize
+10025faf8 s_FileModel_10025faf8
+10025fd80 s_CustomCollectionView_10025fd80
+10026a850 s_NSPasteboardWriting_10026a850
+10026a880 s_@"NSArray"24@0:8@"NSPasteboard"1_10026a880
+10026bc80 s_thumbnailOfFolderUseStackingChec_10026bc80
+10026be70 s_T@"NSButton",N,W,VthumbnailOfFol_10026be70
+10026c040 s_T@"_TtC10FlowVision20ThumbnailEx_10026c040
+10026c190 s__TtC10FlowVision20ThumbnailExclu_10026c190
+10026c260 s_thumbnailExcludeList_10026c260
+10026c380 s_thumbnailOfFolderUseStacking_10026c380
+10026c540 s_@"<NSPasteboardWriting>"32@0:8@"_10026c540
+10026cea0 s_isShowThumbnailFilename_10026cea0
+10026cec0 s_ThumbnailFilenameSize_10026cec0
+10026cee0 s__thumbnailCellPadding_10026cee0
+10026cf00 s_ThumbnailBorderRadiusInGrid_10026cf00
+10026cf20 s_ThumbnailBorderRadius_10026cf20
+10026cf40 s__thumbnailBorderThickness_10026cf40
+10026cf60 s_ThumbnailLineSpaceAdjust_10026cf60
+10026cf80 s_ThumbnailShowShadow_10026cf80
+10026e730 s_isShowThumbnailBadge_10026e730
+10026e750 s_isShowThumbnailTag_10026e750
+10026ff80 s_isDraggingProgress_10026ff80
+100270ea0 s_@"<NSPasteboardWriting>"32@0:8@"_100270ea0
+100270ef0 s_@"<NSPasteboardWriting>"32@0:8@"_100270ef0
+100272600 s_thumbnailFilenameSize_100272600
+100272620 s_thumbnailCellPadding_100272620
+100272640 s_thumbnailBorderRadiusInGrid_100272640
+100272660 s_thumbnailBorderRadius_100272660
+100272680 s_thumbnailBorderThickness_100272680
+1002726a0 s_thumbnailLineSpaceAdjust_1002726a0
+1002726c0 s_thumbnailShowShadow_1002726c0
+100273390 s_eSourceCreateThumbnailAtIndex._100273370+0x20
+100274500 s_@"<NSPasteboardWriting>"32@0:8@"_100274500
+100276470 s_FlowVision.CustomCollectionViewM_100276470
+100278bb0 s__TtC10FlowVision9FileModel_100278bb0
+10027a4cb s_-Thumbnail(_10027a4cb
+10027a631 s_decodeThumbnailPixelSize_10027a631
+10027a72c s_encodeEmbedThumbnail_10027a72c
+10027ae1e s_Thumbnail({%f,%f},%d)_10027ae1e
+10027b08d s_imageThumbnailPixelSize_10027b08d
+1002824f4 s_draggingExited:_1002824f4
+10028299a s_pasteboardItems_10028299a
+100283a1d s_collectionView:draggingImageForI_100283a1d
+100285c25 s__thumbnailSize_100285c25
+100287d09 s_collectionView:draggingImageForI_100287d09
+100287d4c s_collectionView:draggingSession:e_100287d4c
+100287d87 s_collectionView:draggingSession:w_100287d87
+100287dcd s_collectionView:draggingSession:w_100287dcd
+100288017 s_collectionView:pasteboardWriterF_100288017
+100288046 s_collectionView:pasteboardWriterF_100288046
+10028814d s_collectionView:updateDraggingIte_10028814d
+1002898a7 s_draggingEnded:_1002898a7
+1002898b6 s_draggingEntered:_1002898b6
+1002898c7 s_draggingLocation_1002898c7
+1002898d8 s_draggingPasteboard_1002898d8
+1002898eb s_draggingSource_1002898eb
+1002898fa s_draggingUpdated:_1002898fa
+10028a222 s_generalPasteboard_10028a222
+10028c466 s_outlineView:draggingSession:ende_10028c466
+10028c49a s_outlineView:draggingSession:will_10028c49a
+10028c64a s_outlineView:pasteboardWriterForI_10028c64a
+10028c939 s_outlineView:updateDraggingItemsF_10028c939
+10028cbe4 s_pasteboardPropertyListForType:_10028cbe4
+10028cc03 s_pasteboardWithName:_10028cc03
+10028e524 s_sd_isThumbnail_10028e524
+10028fdc0 s_setDraggingDestinationFeedbackSt_10028fdc0
+10028fde5 s_setDraggingSourceOperationMask:f_10028fde5
+100291574 s_setThumbnailOfFolderUseStackingC_100291574
+100292847 s_tableView:draggingSession:endedA_100292847
+100292879 s_tableView:draggingSession:willBe_100292879
+1002929b7 s_tableView:pasteboardWriterForRow_1002929b7
+100292c4b s_tableView:updateDraggingItemsFor_100292c4b
+100293064 s_thumbnailOfFolderUseStackingChec_100293064
+100293089 s_thumbnailOfFolderUseStackingTogg_100293089
+10029431b s_writableTypesForPasteboard:_10029431b
+10029436a s_writingOptionsForType:pasteboard_10029436a
+10029f350 s_thumbnailOfFolderUseStackingChec_10029f350
+10029f590 s_isShowThumbnailFilename_10029f590
+10029f5b0 s_ThumbnailFilenameSize_10029f5b0
+10029f5d0 s__thumbnailCellPadding_10029f5d0
+10029f5f0 s_ThumbnailBorderRadiusInGrid_10029f5f0
+10029f610 s_ThumbnailBorderRadius_10029f610
+10029f630 s__thumbnailBorderThickness_10029f630
+10029f650 s_ThumbnailLineSpaceAdjust_10029f650
+10029f670 s_ThumbnailShowShadow_10029f670
+1002a0f40 s_isDraggingProgress_1002a0f40
+1002a1470 s_thumbnailOfFolderUseStacking_1002a1470
+1002a1490 s_thumbnailExcludeList_1002a1490
+1002a1a20 s_isShowThumbnailBadge_1002a1a20
+1002a1a40 s_isShowThumbnailTag_1002a1a40
+1002a1a60 s_isShowThumbnailFilename_1002a1a60
+1002a1a80 s_thumbnailFilenameSize_1002a1a80
+1002a1aa0 s_thumbnailCellPadding_1002a1aa0
+1002a1ac0 s_thumbnailBorderRadiusInGrid_1002a1ac0
+1002a1ae0 s_thumbnailBorderRadius_1002a1ae0
+1002a1b00 s_thumbnailBorderThickness_1002a1b00
+1002a1b20 s_thumbnailLineSpaceAdjust_1002a1b20
+1002a1b40 s_thumbnailShowShadow_1002a1b40
+1002b8360 PTR__NSPasteboardTypeFileURL_1002b8360
+1002b8368 PTR__NSPasteboardTypeString_1002b8368
+1002b8578 PTR__kCGImageDestinationEmbedThumbnail_1002b8578
+1002b8710 PTR__kCGImageSourceCreateThumbnailFromImageAlways_1002b8710
+1002b8718 PTR__kCGImageSourceCreateThumbnailFromImageIfAbsent_1002b8718
+1002b8720 PTR__kCGImageSourceCreateThumbnailWithTransform_1002b8720
+1002b8750 PTR__kCGImageSourceThumbnailMaxPixelSize_1002b8750
+1002beda8 PTR_cf_decodeThumbnailPixelSize_1002beda8
+1002bee08 PTR_cf_encodeEmbedThumbnail_1002bee08
+1002bf048 PTR_cf_imageThumbnailPixelSize_1002bf048
+1002c1e28 cf_-Thumbnail(
+1002c1f68 cf_decodeThumbnailPixelSize
+1002c20e8 cf_encodeEmbedThumbnail
+1002c2488 cf_Thumbnail({%f,%f},%d)
+1002c27a8 cf_imageThumbnailPixelSize
+1002c4000 objc::protocol_list_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c4f28 objc::protocol_t::NSPasteboardWriting
+1002c5058 objc::objc_property_list::_TtC10FlowVision20ThumbnailExcludeView
+1002c5058 objc::objc_property_list::_TtC10FlowVision27CustomCollectionViewManager
+1002c5058 objc::objc_property_list::NSPasteboardWriting
+1002c5188 objc::protocol_list_t::NSPasteboardWriting
+1002c6130 objc::class_rw_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c6178 objc::ivar_list_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c61c0 objc::objc_property_list::_TtC10FlowVision20ThumbnailExcludeView
+1002c6298 objc::protocol_list_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c63a0 objc::protocol_list_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c6540 objc::protocol_list_t::_TtC10FlowVision20ThumbnailExcludeView
+1002c8698 objc::class_rw_t::_TtC10FlowVision24CustomCollectionViewItem
+1002c86e0 objc::ivar_list_t::_TtC10FlowVision24CustomCollectionViewItem
+1002c8968 objc::objc_property_list::_TtC10FlowVision24CustomCollectionViewItem
+1002c9c68 objc::protocol_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002c9cc8 objc::protocol_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cc4a8 objc::protocol_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cc4c8 objc::class_rw_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cc510 objc::protocol_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cc530 objc::ivar_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cc578 objc::protocol_list_t::_TtC10FlowVision27CustomCollectionViewManager
+1002cdc88 objc::class_rw_t::_TtC10FlowVision9FileModel
+1002cdcd0 objc::ivar_list_t::_TtC10FlowVision9FileModel
+1002ce948 objc::class_rw_t::_TtC10FlowVision20CustomCollectionView
+1002ce990 objc::ivar_list_t::_TtC10FlowVision20CustomCollectionView
+1002dfd88 PTR__CGImageSourceCreateThumbnailAtIndex_1002dfd88
+1002e1d60 PTR_s_sd_isThumbnail_1002e1d60
+1002e27e8 PTR_s_tableView:pasteboardWriterForRow_1002e27e8
+1002e2908 PTR_s_outlineView:pasteboardWriterForI_1002e2908
+1002e2cc0 PTR_s_draggingEntered:_1002e2cc0
+1002e2e38 PTR_s_thumbnailOfFolderUseStackingChec_1002e2e38
+1002e2e40 PTR_s_setThumbnailOfFolderUseStackingC_1002e2e40
+1002e2f30 PTR_s_thumbnailOfFolderUseStackingTogg_1002e2f30
+1002e2f88 PTR_s_draggingUpdated:_1002e2f88
+1002e2f90 PTR_s_draggingExited:_1002e2f90
+1002e2f98 PTR_s_draggingEnded:_1002e2f98
+1002e31c0 PTR_s_collectionView:pasteboardWriterF_1002e31c0
+1002e38f0 PTR_s_writableTypesForPasteboard:_1002e38f0
+1002e38f8 PTR_s_pasteboardPropertyListForType:_1002e38f8
+1002e3900 PTR_s_writingOptionsForType:pasteboard_1002e3900
+1002e3ac8 PTR_s_tableView:draggingSession:willBe_1002e3ac8
+1002e3ad0 PTR_s_tableView:draggingSession:endedA_1002e3ad0
+1002e3ad8 PTR_s_tableView:updateDraggingItemsFor_1002e3ad8
+1002e3d18 PTR_s_collectionView:draggingImageForI_1002e3d18
+1002e3d20 PTR_s_collectionView:draggingImageForI_1002e3d20
+1002e3d48 PTR_s_collectionView:pasteboardWriterF_1002e3d48
+1002e3d50 PTR_s_collectionView:draggingSession:w_1002e3d50
+1002e3d58 PTR_s_collectionView:draggingSession:w_1002e3d58
+1002e3d60 PTR_s_collectionView:draggingSession:e_1002e3d60
+1002e3d68 PTR_s_collectionView:updateDraggingIte_1002e3d68
+1002e3dc8 PTR_s_outlineView:draggingSession:will_1002e3dc8
+1002e3dd0 PTR_s_outlineView:draggingSession:ende_1002e3dd0
+1002e3de0 PTR_s_outlineView:updateDraggingItemsF_1002e3de0
+1002e4298 PTR_s_generalPasteboard_1002e4298
+1002e46f0 PTR_s_draggingPasteboard_1002e46f0
+1002e46f8 PTR_s_draggingSource_1002e46f8
+1002e4948 PTR_s_pasteboardItems_1002e4948
+1002e4998 PTR_s_setDraggingDestinationFeedbackSt_1002e4998
+1002e4b40 PTR_s_setDraggingSourceOperationMask:f_1002e4b40
+1002e4bc8 PTR_s_draggingLocation_1002e4bc8
+1002e5ba8 PTR_s_pasteboardWithName:_1002e5ba8
+1002e5f98 PTR__OBJC_CLASS_$_NSPasteboard_1002e5f98
+1002e60e8 PTR__OBJC_CLASS_$_NSPasteboardItem_1002e60e8
+1002e67c8 SDImageWebPCoder::_thumbnailSize
+1002e6980 SDImageIOAnimatedCoder::_thumbnailSize
+1002e69ac SDImageIOCoder::_thumbnailSize
+1002e86b8 objc::class_rw_t::_TtC10FlowVision20ThumbnailExcludeView
+1002e86ba _TtC10FlowVision20ThumbnailExcludeView.flags+2
+1002e8718 objc::class_t::_TtC10FlowVision20ThumbnailExcludeView
+1002e9948 objc::class_rw_t::_TtC10FlowVision24CustomCollectionViewItem
+1002e994a _TtC10FlowVision24CustomCollectionViewItem.flags+2
+1002e99b0 objc::class_t::_TtC10FlowVision24CustomCollectionViewItem
+1002ecd18 objc::class_rw_t::_TtC10FlowVision27CustomCollectionViewManager
+1002ecd1a _TtC10FlowVision27CustomCollectionViewManager.flags+2
+1002ecd80 objc::class_t::_TtC10FlowVision27CustomCollectionViewManager
+1002ede40 objc::class_rw_t::_TtC10FlowVision9FileModel
+1002ede42 _TtC10FlowVision9FileModel.flags+2
+1002ee008 objc::class_rw_t::_TtC10FlowVision20CustomCollectionView
+1002ee00a _TtC10FlowVision20CustomCollectionView.flags+2
+1002ee068 objc::class_t::_TtC10FlowVision20CustomCollectionView
+1002f1c20 _TtC10FlowVision28CustomSettingsViewController::thumbnailOfFolderUseStackingCheckbox
+1002f1cc0 _TtC10FlowVision20ThumbnailExcludeView::paths
+1002f1cc8 _TtC10FlowVision20ThumbnailExcludeView::tableView
+1002f1cd0 objc::class_t::_TtC10FlowVision20ThumbnailExcludeView
+1002f2e00 _TtC10FlowVision24CustomCollectionViewItem::imageViewObj
+1002f2e08 _TtC10FlowVision24CustomCollectionViewItem::imageNameField
+1002f2e10 _TtC10FlowVision24CustomCollectionViewItem::imageLabel
+1002f2e18 _TtC10FlowVision24CustomCollectionViewItem::videoFlag
+1002f2e20 _TtC10FlowVision24CustomCollectionViewItem::videoView
+1002f2e28 _TtC10FlowVision24CustomCollectionViewItem::avPlayerLayer
+1002f2e30 _TtC10FlowVision24CustomCollectionViewItem::queuePlayer
+1002f2e38 _TtC10FlowVision24CustomCollectionViewItem::playerLooper
+1002f2e40 _TtC10FlowVision24CustomCollectionViewItem::mouseDownLocation
+1002f2e48 _TtC10FlowVision24CustomCollectionViewItem::lastClickTime
+1002f2e50 _TtC10FlowVision24CustomCollectionViewItem::lastClickLocation
+1002f2e58 _TtC10FlowVision24CustomCollectionViewItem::positionThreshold
+1002f2e60 _TtC10FlowVision24CustomCollectionViewItem::middleMouseLastLocation
+1002f2e68 objc::class_t::_TtC10FlowVision24CustomCollectionViewItem
+1002f32e0 _TtC10FlowVision23VideoPlayerControlsView::isDraggingProgress
+1002f44a0 _TtC10FlowVision20ProfileOptionsWindow::isShowThumbnailBadge
+1002f44a8 _TtC10FlowVision20ProfileOptionsWindow::isShowThumbnailTag
+1002f44b0 _TtC10FlowVision20ProfileOptionsWindow::isShowThumbnailFilename
+1002f44b8 _TtC10FlowVision20ProfileOptionsWindow::thumbnailFilenameSize
+1002f44c0 _TtC10FlowVision20ProfileOptionsWindow::thumbnailCellPadding
+1002f44c8 _TtC10FlowVision20ProfileOptionsWindow::thumbnailBorderRadiusInGrid
+1002f44d0 _TtC10FlowVision20ProfileOptionsWindow::thumbnailBorderRadius
+1002f44d8 _TtC10FlowVision20ProfileOptionsWindow::thumbnailBorderThickness
+1002f44e0 _TtC10FlowVision20ProfileOptionsWindow::thumbnailLineSpaceAdjust
+1002f44e8 _TtC10FlowVision20ProfileOptionsWindow::thumbnailShowShadow
+1002f51f8 _TtC10FlowVision27CustomCollectionViewManager::fileDB
+1002f5200 objc::class_t::_TtC10FlowVision27CustomCollectionViewManager
+1002f6150 objc::class_t::_TtC10FlowVision9FileModel
+1002f61a8 objc::class_t::_TtC10FlowVision9FileModel
+1002f6e60 _TtC10FlowVision20CustomCollectionView::mouseDownLocation
+1002f6e68 _TtC10FlowVision20CustomCollectionView::$__lazy_storage_$_folderInfoLabel
+1002f6e70 _TtC10FlowVision20CustomCollectionView::folderInfoLabelConstraints
+1002f6e78 objc::class_t::_TtC10FlowVision20CustomCollectionView
+1002f9918 _TtC10FlowVision24CustomCollectionViewItem::currentPlayingURL
+1002f9920 _TtC10FlowVision24CustomCollectionViewItem::folderViews
+1002f9928 _TtC10FlowVision24CustomCollectionViewItem::folderImageViews
+1002f9930 _TtC10FlowVision24CustomCollectionViewItem::file
+1002f9938 _TtC10FlowVision24CustomCollectionViewItem::finderTagDotsView
+1002f9940 _TtC10FlowVision24CustomCollectionViewItem::ratingStarsView
+1002f9948 _TtC10FlowVision24CustomCollectionViewItem::aliasBadgeView
+1002f9a88 _TtC10FlowVision27CustomCollectionViewManager::lastSelectedIndexPath
+1002f9b48 _TtC10FlowVision9FileModel::modDate
+1002f9b50 _TtC10FlowVision9FileModel::createDate
+1002f9b58 _TtC10FlowVision9FileModel::addDate
+1002f9b60 _TtC10FlowVision9FileModel::doNotActualRead
+1002f9b68 _TtC10FlowVision9FileModel::isHidden
+1002f9b70 _TtC10FlowVision9FileModel::rotate
+1002f9b78 _TtC10FlowVision9FileModel::imageInfo
+1002f9b80 _TtC10FlowVision9FileModel::getThumbFailed
+1002f9b88 _TtC10FlowVision9FileModel::finderTags
+10033a1c9 s__CGImageSourceCreateThumbnailAtI_10033a1c9
+10033a946 s__NSPasteboardTypeFileURL_10033a946
+10033a95f s__NSPasteboardTypeString_10033a95f
+10033b961 s__OBJC_CLASS_$_NSPasteboard_10033b961
+10033b97c s__OBJC_CLASS_$_NSPasteboardItem_10033b97c
+10033d6ea s__kCGImageSourceCreateThumbnailFr_10033d6ea
+10033d718 s__kCGImageSourceCreateThumbnailFr_10033d718
+10033d748 s__kCGImageSourceCreateThumbnailWi_10033d748
+10033d808 s__kCGImageSourceThumbnailMaxPixel_10033d808
+100366e00 _NSPasteboardTypeFileURL
+100366f00 _NSPasteboardTypeString
+10036f700 _OBJC_CLASS_$_NSPasteboard
+10036f701 NSPasteboard::generalPasteboard
+10036f702 NSPasteboard::clearContents
+10036f703 NSPasteboard::setString:forType:
+10036f704 NSPasteboard::writeObjects:
+10036f705 NSPasteboard::types
+10036f706 NSPasteboard::pasteboardItems
+10036f707 NSPasteboard::pasteboardWithName:
+10036f708 NSPasteboard::releaseGlobally
+10036f800 _OBJC_CLASS_$_NSPasteboardItem
+10036f801 NSPasteboardItem::init
+10036f802 NSPasteboardItem::setString:forType:
+10036f803 NSPasteboardItem::setData:forType:
+10037a000 _kCGImageDestinationEmbedThumbnail
+10037d300 _kCGImageSourceCreateThumbnailFromImageAlways
+10037d400 _kCGImageSourceCreateThumbnailFromImageIfAbsent
+10037d500 _kCGImageSourceCreateThumbnailWithTransform
+10037db00 _kCGImageSourceThumbnailMaxPixelSize

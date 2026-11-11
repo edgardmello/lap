@@ -2057,6 +2057,8 @@ pub struct ATimeLine {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
+    #[serde(default)]
+    pub library_filter: crate::t_library_filter::LibraryFilter,
     pub search_file_name: String, // file name search
     pub search_file_type: i64,
     pub sort_type: i64,
@@ -2115,6 +2117,8 @@ pub struct SmartRule {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SmartQueryParams {
+    #[serde(default)]
+    pub library_filter: crate::t_library_filter::LibraryFilter,
     #[serde(default = "default_smart_query_version")]
     pub version: i32,
     #[serde(default = "default_smart_query_match")]
@@ -2277,7 +2281,7 @@ impl AFile {
 
     /// Exclude files whose folder path is the excluded folder itself or one of its children.
     /// The caller must pass the alias for the file's joined afolders row.
-    fn search_exclusion_condition(folder_alias: &str) -> String {
+    pub(crate) fn search_exclusion_condition(folder_alias: &str) -> String {
         let sep = std::path::MAIN_SEPARATOR.to_string().replace('\'', "''");
         format!(
             "(CASE
@@ -3291,7 +3295,7 @@ impl AFile {
         base_query.to_string()
     }
 
-    fn live_photo_companion_exclusion_condition() -> String {
+    pub(crate) fn live_photo_companion_exclusion_condition() -> String {
         format!("a.id NOT IN (SELECT primary_file.live_photo_video_id FROM afiles primary_file
             WHERE primary_file.live_photo_video_id IS NOT NULL AND {})", Self::album_scan_predicate("primary_file"))
     }
@@ -3781,7 +3785,7 @@ impl AFile {
             Self::album_joined_filter_predicate(alias, "scope_folder", "scope_album"))
     }
 
-    fn album_query_predicate(alias: &str) -> String {
+    pub(crate) fn album_query_predicate(alias: &str) -> String {
         // Materialize excluded folder IDs once per bulk query, not per file.
         format!("(EXISTS (SELECT 1 FROM afolders scope_folder JOIN albums scope_album
             ON scope_album.id = scope_folder.album_id WHERE scope_folder.id = {alias}.folder_id AND {})
@@ -4896,11 +4900,13 @@ impl AFile {
 
     // helper to build search query conditions and params
     // Returns (joins_clause, where_clause, params)
-    fn build_search_query_parts(params: &QueryParams) -> (String, String, Vec<Box<dyn ToSql>>) {
+    pub(crate) fn build_search_query_parts(params: &QueryParams) -> (String, String, Vec<Box<dyn ToSql>>) {
         let mut joins = Vec::new();
         let mut conditions: Vec<String> =
             vec![Self::live_photo_companion_exclusion_condition().to_string()];
         let mut sql_params: Vec<Box<dyn ToSql>> = Vec::new();
+
+        crate::t_library_filter::append_filter(&params.library_filter, &mut conditions, &mut sql_params);
 
         if !params.search_file_name.is_empty() {
             let (condition, values) = Self::file_name_search_condition(&params.search_file_name);
@@ -6080,7 +6086,7 @@ impl AFile {
         }
     }
 
-    fn build_smart_query_parts(
+    pub(crate) fn build_smart_query_parts(
         params: &SmartQueryParams,
     ) -> Result<(String, String, Vec<Box<dyn ToSql>>, bool), String> {
         if params.rules.is_empty() {
@@ -6126,6 +6132,8 @@ impl AFile {
                 sql_params.push(Box::new(max_lon));
             }
         }
+
+        crate::t_library_filter::append_filter(&params.library_filter, &mut conditions, &mut sql_params);
 
         let joiner = if params.r#match == "any" {
             " OR "

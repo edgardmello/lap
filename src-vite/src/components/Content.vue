@@ -55,6 +55,12 @@
       <!-- toolbar -->
       <div class="flex items-center gap-2 shrink-0">
 
+        <TButton :icon="IconFilter" :buttonSize="'medium'" :tooltip="$t('libraryFilter.title')"
+          :selected="showLibraryFilter || activeLibraryFilterCount(libraryFilter) > 0"
+          @click="showLibraryFilter = !showLibraryFilter" />
+        <TButton :icon="IconTag" :buttonSize="'medium'" :tooltip="$t('keywords.title')"
+          :selected="showKeywordPanel" @click="showKeywordPanel = !showKeywordPanel" />
+
         <!-- file type options -->
         <DropDownSelect
           :icon="IconFilter"
@@ -182,7 +188,12 @@
     </div>
 
     <!-- content view -->
-    <div ref="contentViewDiv" class="relative flex-1 flex flex-row overflow-hidden">
+    <LibraryFilterBar v-if="showLibraryFilter && !showWelcomeContent" :key="libConfig._libraryId || 'default'"
+      v-model="libraryFilter" class="absolute top-12 inset-x-0 z-30"
+      :query="currentQueryParams" :smart-query="currentQuerySource === 'smart' ? currentSmartQueryParams : null"
+      :collection-id="currentCollectionId" :supported="currentQuerySource !== 'search' && tempViewMode === 'none' && !isScanStreamingMode"
+      :revision="keywordRevision" @height="libraryFilterHeight = $event" @close="showLibraryFilter = false" />
+    <div ref="contentViewDiv" class="relative flex-1 flex flex-row overflow-hidden" :style="{ marginTop: `${showLibraryFilter ? libraryFilterHeight : 0}px` }">
       <div class="relative flex-1 flex flex-row overflow-hidden">
         <PhotoMapView
           v-if="mapViewMounted"
@@ -435,6 +446,10 @@
       </div>
 
       <!-- info panel splitter -->
+      <KeywordPanel v-if="showKeywordPanel" :key="`keywords-${libConfig._libraryId}`"
+        class="mt-12 mb-8 shrink-0" :file-ids="keywordSelectionIds" :revision="keywordRevision"
+        @close="showKeywordPanel = false" @filter="filterByKeyword"
+        @changed="handleLibraryKeywordsChanged" @label-changed="handleLibraryLabelsChanged" />
       <div v-if="rightPanelLayoutVisible"
         class="w-1 shrink-0 mt-12 cursor-col-resize splitter-indicator splitter-vertical"
         :class="{
@@ -824,6 +839,9 @@ import IndexRecoveryDialog from '@/components/IndexRecoveryDialog.vue';
 import MoveTo from '@/components/MoveTo.vue';
 import TButton from '@/components/TButton.vue';
 import TaggingDialog from '@/components/TaggingDialog.vue';
+import LibraryFilterBar from '@/components/LibraryFilterBar.vue';
+import KeywordPanel from '@/components/KeywordPanel.vue';
+import { emptyLibraryFilter, activeLibraryFilterCount } from '@/common/libraryFilter';
 import AddToCollectionDialog from '@/components/AddToCollectionDialog.vue';
 import ExternalAppsDialog from '@/components/ExternalAppsDialog.vue';
 import FileInfo from '@/components/FileInfo.vue';
@@ -1049,6 +1067,38 @@ const isItemRow = (item: any) => item?.type === 'item';
 const selectedFileIds = markRaw(new Set<number>());
 const selectionVersion = ref(0);
 const selectedFilesVersion = ref(0);
+const libraryFilter = ref(emptyLibraryFilter());
+const showLibraryFilter = ref(false);
+const libraryFilterHeight = ref(0);
+const showKeywordPanel = ref(false);
+const keywordRevision = ref(0);
+const keywordSelectionIds = computed(() => {
+  selectedFilesVersion.value;
+  if (selectMode.value) {
+    return [...new Set([...selectedFileIds, ...fileList.value.filter(file => isRealFileItem(file) && file.isSelected).map(file => Number(file.id))])];
+  }
+  const file = fileList.value[selectedItemIndex.value];
+  return isRealFileItem(file) ? [Number(file.id)] : [];
+});
+function filterByKeyword(id: number) {
+  if (currentQuerySource.value === 'search' || tempViewMode.value !== 'none') {
+    config.main.sidebarIndex = SIDEBAR.LIBRARY;
+    libConfig.activePane = 'main';
+    libConfig.library.item = LIB_ITEM.ALL;
+  }
+  libraryFilter.value = { ...libraryFilter.value, keywordIds: [id], withoutKeywords: false };
+  showLibraryFilter.value = true;
+}
+async function handleLibraryKeywordsChanged(states: any[]) {
+  await syncTagStates(states);
+  keywordRevision.value++;
+  if (libraryFilter.value.keywordIds.length || libraryFilter.value.withoutKeywords || libraryFilter.value.text.trim()) refreshContentFromSelectionChange();
+}
+function handleLibraryLabelsChanged() {
+  keywordRevision.value++;
+  if (libraryFilter.value.labels.length) refreshContentFromSelectionChange();
+}
+watch(() => libConfig._libraryId, () => { libraryFilter.value = emptyLibraryFilter(); keywordRevision.value++; });
 const selectionPreviewFiles = ref<any[]>([]);
 
 let selectionPreviewRequestId = 0;
@@ -3493,6 +3543,10 @@ function matchesRequestedSidebarCount(request: any) {
 
 function commitRequestedSidebarCount(count: number, request = uiStore.countUpdateRequest) {
   if (!request || uiStore.countUpdateRequest !== request) return;
+  if (activeLibraryFilterCount(libraryFilter.value) > 0) {
+    uiStore.clearCountUpdateRequest();
+    return;
+  }
   if (!matchesRequestedSidebarCount(request)) {
     uiStore.clearCountUpdateRequest();
     return;
@@ -6205,6 +6259,7 @@ watch(
     libConfig.rating.item, // rating
     libConfig.culling.item, // culling
     config.search.fileType, config.search.sortType, config.search.sortOrder, // search and sort 
+    JSON.stringify(libraryFilter.value),
     config.settings.showSubfolderFiles,                                            // album folder view
     config.settings.folderSort, config.settings.calendarSort, config.settings.locationSort, config.settings.cameraSort, config.search.groupBy, // group sorting and filtering (tag/person sorts only affect their sidebars, not content grouping)
     libConfig.person.id,                                                              // person
@@ -7138,6 +7193,7 @@ async function getFileList(
   // Update current query params with all fields
   currentQueryParams.value = {
     searchFileType,
+    libraryFilter: JSON.parse(JSON.stringify(libraryFilter.value)),
     sortType,
     sortOrder,
     randomSeed,
@@ -7379,6 +7435,7 @@ async function getSmartFileList(smartAlbum: any, requestId: number) {
   dedupSmartFileIds.value = null;
   currentSmartQueryParams.value = {
     version: Number(query.version || 1),
+    libraryFilter: JSON.parse(JSON.stringify(libraryFilter.value)),
     match: query.match === 'any' ? 'any' : 'all',
     rules,
     sortType: Number(smartAlbum?.sort?.type ?? 0),

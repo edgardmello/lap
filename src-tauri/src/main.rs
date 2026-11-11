@@ -42,6 +42,8 @@ mod t_embed_server;
 mod t_local_server;
 mod t_pasteboard;
 mod t_protocol;
+mod t_quick_view;
+mod t_library_filter;
 mod t_similar;
 mod t_sqlite;
 mod t_storage;
@@ -207,6 +209,10 @@ async fn main() {
             t_menu::handle_menu_event(app, event);
         })
         .invoke_handler(tauri::generate_handler![
+            t_library_filter::get_library_facets,
+            t_library_filter::get_keyword_panel,
+            t_library_filter::add_keywords,
+            t_library_filter::set_library_color_label,
             t_startup::record_startup_stage,
             t_startup::finish_startup,
             t_startup::get_ai_initialization_status,
@@ -321,6 +327,9 @@ async fn main() {
             t_cmds::render_montage,
             t_cmds::copy_edited_image,
             t_cmds::copy_images,
+            t_quick_view::quick_view_collect,
+            t_quick_view::quick_view_thumbnail,
+            t_quick_view::quick_view_copy,
             t_cmds::rename_file,
             t_cmds::preview_batch_rename,
             t_cmds::batch_rename_files,

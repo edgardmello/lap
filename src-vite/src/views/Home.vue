@@ -55,6 +55,10 @@
 
             <div class="flex-1"></div>
 
+            <TButton :buttonSize="'large'" :icon="IconPhotoAll" text=""
+              :tooltip="$t('quickView.title')" tooltipPlacement="right"
+              @click="openQuickViewWindow().catch(error => console.error('Quick view:', error))" />
+
             <TButton 
               class="mt-auto"
               :class="showDebugBadge ? 'text-warning': ''"
@@ -209,6 +213,7 @@ const Person = defineAsyncComponent(() => import('@/components/Person.vue'));
 const Camera = defineAsyncComponent(() => import('@/components/Camera.vue'));
 
 import TitleBar from '@/components/TitleBar.vue';
+import { openQuickViewWindow } from '@/common/quickViewWindow';
 import TButton from '@/components/TButton.vue';
 import Content from '@/components/Content.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
